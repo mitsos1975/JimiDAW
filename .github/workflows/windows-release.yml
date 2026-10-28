@@ -1,6 +1,8 @@
 name: Windows release
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -26,7 +28,16 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item $exe.FullName dist/JimiDAW.exe
           Compress-Archive -Path dist/JimiDAW.exe -DestinationPath JimiDAW-Windows.zip -Force
-          Write-Host "Packed $($exe.FullName)"
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $version = "0.3.${{ github.run_number }}"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" installer\JimiDAW.iss
+          Get-ChildItem dist
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -37,12 +48,15 @@ jobs:
           prerelease: false
           generate_release_notes: false
           body: |
-            Unzip JimiDAW-Windows.zip and run JimiDAW.exe.
+            Download JimiDAW-Setup-0.3.${{ github.run_number }}.exe and run it.
+            It installs JimiDAW and puts a shortcut on the desktop.
 
-            This build uses WASAPI. Pick the input and output with the Audio button.
+            JimiDAW-Windows.zip is the same program without an installer.
+
+            Pick the input and output with the Audio button.
             If Windows reports a missing DLL, install the Microsoft Visual C++ 2015-2022 redistributable (x64).
-
-            What this version does: play, record, import and export WAV, save and open a project, piano roll, EQ, compressor, pan, and one VST3 per track.
-          files: JimiDAW-Windows.zip
+          files: |
+            JimiDAW-Windows.zip
+            dist/JimiDAW-Setup-*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
