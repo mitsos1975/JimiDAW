@@ -46,18 +46,17 @@ void TrackList::mouseDown(const juce::MouseEvent& event)
         return;
 
     const int localY = (event.y - header) - index * rowHeight;
+    auto apply = [this, index, localY, x = event.x]
     {
-        juce::ScopedLock sl(lock != nullptr ? *lock : juce::CriticalSection());
-        if (lock == nullptr) {}
         auto& track = project->tracks[(size_t) index];
         project->selectedTrack = index;
         if (localY > 28)
         {
-            if (event.x < 70)
+            if (x < 70)
                 track.mute = !track.mute;
-            else if (event.x < 92)
+            else if (x < 92)
                 track.solo = !track.solo;
-            else if (event.x < 114)
+            else if (x < 114)
             {
                 for (auto& other : project->tracks)
                     other.armed = false;
@@ -65,7 +64,16 @@ void TrackList::mouseDown(const juce::MouseEvent& event)
                 project->armedTrack = index;
             }
         }
+    };
+
+    if (lock != nullptr)
+    {
+        juce::ScopedLock sl(*lock);
+        apply();
     }
+    else
+        apply();
+
     repaint();
     if (onChanged)
         onChanged();

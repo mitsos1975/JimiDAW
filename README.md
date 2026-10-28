@@ -2,11 +2,9 @@
 
 Native Windows DAW built with JUCE 8.
 
-Repository: https://github.com/mitsos1975/JimiDAW
+https://github.com/mitsos1975/JimiDAW
 
 ## Build
-
-Install Visual Studio 2022 (Desktop development with C++) and CMake 3.22 or newer. Then, in the repository folder:
 
 ```bat
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
@@ -15,32 +13,20 @@ cmake --build build --config Release
 
 The program is `build/JimiDAW_artefacts/Release/JimiDAW.exe`.
 
-The first configure downloads JUCE. That takes a few minutes.
+The first configure downloads JUCE. Pull the latest `main` before building.
 
-## ASIO
+ASIO stays off until the Steinberg SDK is in `third_party/asiosdk`. Then configure with `-DJIMIDAW_ASIO=ON`.
 
-ASIO is off until the Steinberg SDK is present. Copy it into `third_party/asiosdk` as described there, then:
+## In this version
 
-```bat
-cmake -S . -B build -DJIMIDAW_ASIO=ON
-cmake --build build --config Release
-```
+- Audio device window, WASAPI, and optional ASIO
+- Play, stop, space bar, tempo, metronome, and loop
+- Click, drag, and resize clips. Shift-wheel scrolls. Wheel zooms. Right-click or Delete removes a clip
+- Record the armed track, import WAV, and export a stereo mix
+- Save and open a `.jimi.json` project, with recordings stored beside it
+- Piano roll, computer-keyboard notes, mute, solo, arm, volume, and pan
+- Per-track low, mid, and high EQ, plus a compressor
+- Load a VST3 on the selected track and open its editor
+- Add tracks
 
-Without that flag the app uses WASAPI.
-
-## What this version does
-
-- Audio device window (Audio button): input, output, sample rate, buffer size
-- Play, stop, tempo, and click on the arrangement to move the playhead
-- Metronome
-- Eight tracks, mute, solo, arm, and faders
-- Record the armed track (the red R) into a clip, then play that audio back
-- Placeholder tones on clips that have no recording yet
-
-## Record
-
-1. Click Audio and choose the input that your microphone or interface is using.
-2. Click the red R on the track you want.
-3. Click Record. Click Record again, or Stop, to finish the clip.
-
-Not in this version yet: saving a project, editing clip edges, a piano roll, or VST hosting.
+This is not yet every function in Cubase or Logic. The next pieces are automation, MIDI file import, quantize, and a fuller mixer.

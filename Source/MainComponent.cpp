@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "Session.h"
 
 class AudioSettingsWindow : public juce::DocumentWindow
 {
@@ -16,14 +17,42 @@ public:
     void closeButtonPressed() override { setVisible(false); }
 };
 
+class PluginWindow : public juce::DocumentWindow
+{
+public:
+    explicit PluginWindow(juce::AudioProcessor& processor)
+        : DocumentWindow(processor.getName(), juce::Colour(0xff23272b), DocumentWindow::closeButton)
+    {
+        setUsingNativeTitleBar(true);
+        if (auto* editor = processor.createEditorIfNeeded())
+            setContentOwned(editor, true);
+        else
+            setContentOwned(new juce::GenericAudioProcessorEditor(processor), true);
+        setResizable(true, true);
+        centreWithSize(juce::jmax(320, getWidth()), juce::jmax(200, getHeight()));
+        setVisible(true);
+    }
+
+    void closeButtonPressed() override { setVisible(false); }
+};
+
 MainComponent::MainComponent()
     : project(Project::demo())
 {
     setLookAndFeel(&lookAndFeel);
+    setWantsKeyboardFocus(true);
     engine.setProject(&project);
+    const auto lock = &engine.getLock();
+    trackList.lock = lock;
+    arrangement.lock = lock;
+    piano.lock = lock;
+    inspector.lock = lock;
+
     trackList.setProject(&project);
     arrangement.setProject(&project);
     mixer.setProject(&project);
+    piano.setProject(&project);
+    inspector.setProject(&project);
     transport.setBpm(project.bpm);
 
     transport.onPlay = [this]
@@ -34,7 +63,7 @@ MainComponent::MainComponent()
     transport.onStop = [this]
     {
         if (engine.isRecording())
-            toggleRecord();
+            commitRecording();
         engine.setPlaying(false);
         engine.setBeat(0.0);
         transport.setPlaying(false);
@@ -48,12 +77,144 @@ MainComponent::MainComponent()
         engine.setBeat(beat);
         arrangement.setBeat(beat);
     };
-    trackList.onChanged = [this] { arrangement.repaint(); };
+    trackList.onChanged = [this] { refreshEditors(); };
+    arrangement.onChanged = [this] { refreshEditors(); };
+    piano.onChanged = [this] { arrangement.repaint(); };
+    inspector.onChanged = [this] { arrangement.repaint(); mixer.repaint(); };
+    inspector.onLoadPlugin = [this]
+    {
+        pluginWindow.reset();
+        chooseFile("Load VST3", "*.vst3",
+                   juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectDirectories,
+                   [this](const juce::File& file)
+                   {
+                       const auto error = engine.loadPlugin(project.selectedTrack, file);
+                       if (error.isNotEmpty())
+                           juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Plugin", error);
+                       else
+                           inspector.refresh();
+                   });
+    };
+    inspector.onShowPlugin = [this]
+    {
+        pluginWindow.reset();
+        if (auto* plugin = engine.getPlugin(project.selectedTrack))
+            pluginWindow.reset(new PluginWindow(*plugin));
+    };
+    inspector.onClearPlugin = [this]
+    {
+        pluginWindow.reset();
+        engine.clearPlugin(project.selectedTrack);
+    };
 
+    saveButton.onClick = [this]
+    {
+        chooseFile("Save project", "*.jimi.json", juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                   [this](const juce::File& chosen)
+                   {
+                       auto file = chosen.hasFileExtension("jimi.json") ? chosen : chosen.withFileExtension("jimi.json");
+                       const auto result = Session::save(project, file);
+                       if (result.failed())
+                           juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Save", result.getErrorMessage());
+                   });
+    };
+    openButton.onClick = [this]
+    {
+        chooseFile("Open project", "*.jimi.json", juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                   [this](const juce::File& file)
+                   {
+                       Project loaded;
+                       const auto result = Session::load(loaded, file);
+                       if (result.failed())
+                       {
+                           juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Open", result.getErrorMessage());
+                           return;
+                       }
+                       {
+                           juce::ScopedLock sl(engine.getLock());
+                           project = std::move(loaded);
+                       }
+                       engine.setProject(&project);
+                       for (int i = 0; i < (int) project.tracks.size(); ++i)
+                           if (project.tracks[(size_t) i].pluginPath.isNotEmpty())
+                               engine.loadPlugin(i, juce::File(project.tracks[(size_t) i].pluginPath));
+                       transport.setBpm(project.bpm);
+                       refreshEditors();
+                   });
+    };
+    importButton.onClick = [this]
+    {
+        chooseFile("Import audio", "*.wav;*.aiff;*.mp3;*.flac", juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                   [this](const juce::File& file)
+                   {
+                       double rate = 44100.0;
+                       auto audio = Session::readMonoWav(file, rate);
+                       if (audio == nullptr)
+                           return;
+                       Clip clip;
+                       clip.startBeat = engine.getBeat();
+                       clip.sampleRate = rate;
+                       clip.audio = audio;
+                       clip.name = file.getFileNameWithoutExtension();
+                       clip.lengthBeats = juce::jmax(0.25, (audio->getNumSamples() / rate) * (project.bpm / 60.0));
+                       const int track = juce::jlimit(0, (int) project.tracks.size() - 1, project.selectedTrack);
+                       {
+                           juce::ScopedLock sl(engine.getLock());
+                           project.tracks[(size_t) track].clips.push_back(std::move(clip));
+                       }
+                       arrangement.repaint();
+                   });
+    };
+    exportButton.onClick = [this]
+    {
+        chooseFile("Export WAV", "*.wav", juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                   [this](const juce::File& chosen)
+                   {
+                       auto file = chosen.hasFileExtension("wav") ? chosen : chosen.withFileExtension("wav");
+                       const auto result = engine.exportWav(file);
+                       if (result.failed())
+                           juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Export", result.getErrorMessage());
+                   });
+    };
+    addTrackButton.onClick = [this]
+    {
+        {
+            juce::ScopedLock sl(engine.getLock());
+            project.tracks.push_back(Project::makeTrack((int) project.tracks.size()));
+        }
+        mixer.setProject(&project);
+        refreshEditors();
+    };
+    pianoButton.onClick = [this]
+    {
+        showPiano = !showPiano;
+        pianoButton.setColour(juce::TextButton::buttonColourId, showPiano ? juce::Colour(0xff3d5a80) : juce::Colour(0xff2e3236));
+        resized();
+    };
+    loopButton.onClick = [this]
+    {
+        project.loopEnabled = !project.loopEnabled;
+        if (project.loopEnd <= project.loopStart)
+            project.loopEnd = project.loopStart + 8.0;
+        loopButton.setColour(juce::TextButton::buttonColourId, project.loopEnabled ? juce::Colour(0xff3d5a80) : juce::Colour(0xff2e3236));
+        arrangement.repaint();
+    };
+    clickButton.onClick = [this]
+    {
+        project.metronome = !project.metronome;
+        clickButton.setColour(juce::TextButton::buttonColourId, project.metronome ? juce::Colour(0xff3d5a80) : juce::Colour(0xff2e3236));
+    };
+
+    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton })
+        addAndMakeVisible(button);
     addAndMakeVisible(transport);
     addAndMakeVisible(trackList);
     addAndMakeVisible(arrangement);
     addAndMakeVisible(mixer);
+    addAndMakeVisible(piano);
+    addAndMakeVisible(inspector);
+    piano.setVisible(false);
+    clickButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3d5a80));
 
     setSize(1440, 900);
     startTimerHz(30);
@@ -64,23 +225,53 @@ MainComponent::~MainComponent()
     setLookAndFeel(nullptr);
 }
 
+void MainComponent::chooseFile(const juce::String& title, const juce::String& filter, int flags,
+                               const std::function<void(const juce::File&)>& use)
+{
+    chooser = std::make_unique<juce::FileChooser>(title, juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), filter);
+    chooser->launchAsync(flags, [use](const juce::FileChooser& dialog)
+    {
+        const auto file = dialog.getResult();
+        if (file != juce::File())
+            use(file);
+    });
+}
+
+void MainComponent::refreshEditors()
+{
+    inspector.refresh();
+    arrangement.repaint();
+    trackList.repaint();
+    piano.repaint();
+    mixer.repaint();
+}
+
 void MainComponent::toggleRecord()
 {
     if (engine.isRecording())
     {
-        auto clip = engine.stopRecording();
-        transport.setRecording(false);
-        if (clip.audio != nullptr && project.armedTrack >= 0 && project.armedTrack < (int) project.tracks.size())
-        {
-            project.tracks[(size_t) project.armedTrack].clips.push_back(std::move(clip));
-            arrangement.repaint();
-        }
+        commitRecording();
         return;
     }
-
     engine.startRecording();
     transport.setRecording(true);
     transport.setPlaying(true);
+    sawRecording = true;
+}
+
+void MainComponent::commitRecording()
+{
+    auto clip = engine.stopRecording();
+    transport.setRecording(false);
+    sawRecording = false;
+    if (clip.audio == nullptr)
+        return;
+    const int track = juce::jlimit(0, (int) project.tracks.size() - 1, project.armedTrack);
+    {
+        juce::ScopedLock sl(engine.getLock());
+        project.tracks[(size_t) track].clips.push_back(std::move(clip));
+    }
+    arrangement.repaint();
 }
 
 void MainComponent::showAudioSettings()
@@ -91,12 +282,61 @@ void MainComponent::showAudioSettings()
     audioSettings->toFront(true);
 }
 
+bool MainComponent::keyPressed(const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::spaceKey)
+    {
+        engine.setPlaying(!engine.isPlaying());
+        transport.setPlaying(engine.isPlaying());
+        return true;
+    }
+
+    if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+    {
+        juce::ScopedLock sl(engine.getLock());
+        if (showPiano && project.selectedNote >= 0 && project.selectedTrack >= 0 && project.selectedTrack < (int) project.tracks.size())
+        {
+            auto& notes = project.tracks[(size_t) project.selectedTrack].notes;
+            if (project.selectedNote < (int) notes.size())
+                notes.erase(notes.begin() + project.selectedNote);
+            project.selectedNote = -1;
+        }
+        else if (project.selectedClip >= 0 && project.selectedTrack >= 0 && project.selectedTrack < (int) project.tracks.size())
+        {
+            auto& clips = project.tracks[(size_t) project.selectedTrack].clips;
+            if (project.selectedClip < (int) clips.size())
+                clips.erase(clips.begin() + project.selectedClip);
+            project.selectedClip = -1;
+        }
+        refreshEditors();
+        return true;
+    }
+
+    const juce::String keys = "awsedftgyhujkolp";
+    const int index = keys.indexOfChar(juce::CharacterFunctions::toLowerCase(key.getTextCharacter()));
+    if (index >= 0 && project.selectedTrack >= 0 && project.selectedTrack < (int) project.tracks.size())
+    {
+        const int semis[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+        MidiNote note;
+        note.note = 60 + semis[index];
+        note.startBeat = std::round(engine.getBeat() * 4.0) / 4.0;
+        note.lengthBeats = 1.0;
+        {
+            juce::ScopedLock sl(engine.getLock());
+            project.tracks[(size_t) project.selectedTrack].notes.push_back(note);
+        }
+        refreshEditors();
+        return true;
+    }
+    return false;
+}
+
 void MainComponent::timerCallback()
 {
     transport.setBeat(engine.getBeat());
     arrangement.setBeat(engine.getBeat());
-    if (!engine.isRecording())
-        transport.setRecording(false);
+    if (sawRecording && !engine.isRecording())
+        commitRecording();
 }
 
 void MainComponent::paint(juce::Graphics& g)
@@ -107,8 +347,26 @@ void MainComponent::paint(juce::Graphics& g)
 void MainComponent::resized()
 {
     auto area = getLocalBounds();
+    auto tools = area.removeFromTop(36).reduced(6, 4);
+    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton })
+    {
+        button->setBounds(tools.removeFromLeft(78));
+        tools.removeFromLeft(4);
+    }
     transport.setBounds(area.removeFromTop(48));
-    mixer.setBounds(area.removeFromBottom(210));
+    inspector.setBounds(area.removeFromRight(250));
+    if (showPiano)
+    {
+        mixer.setVisible(false);
+        piano.setVisible(true);
+        piano.setBounds(area.removeFromBottom(280));
+    }
+    else
+    {
+        piano.setVisible(false);
+        mixer.setVisible(true);
+        mixer.setBounds(area.removeFromBottom(210));
+    }
     trackList.setBounds(area.removeFromLeft(220));
     arrangement.setBounds(area);
 }
