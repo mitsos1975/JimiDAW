@@ -1,4 +1,5 @@
 #include "ArrangementView.h"
+#include <algorithm>
 #include "TrackList.h"
 
 void ArrangementView::setProject(Project* newProject)
@@ -133,6 +134,43 @@ void ArrangementView::paint(juce::Graphics& g)
                        juce::Justification::centredLeft, true);
         }
 
+        if (!project->tracks[i].volumeAutomation.empty() || project->automationMode)
+        {
+            auto points = project->tracks[i].volumeAutomation;
+            std::sort(points.begin(), points.end(), [](const AutomationPoint& a, const AutomationPoint& b)
+            {
+                return a.beat < b.beat;
+            });
+            juce::Path curve;
+            const float top = (float) y + 6.0f;
+            const float bottom = (float) y + TrackList::rowHeight - 8.0f;
+            auto pointY = [&](float value)
+            {
+                return bottom - juce::jlimit(0.0f, 1.0f, value) * (bottom - top);
+            };
+            if (points.empty())
+            {
+                g.setColour(juce::Colour(0xffd2b14a).withAlpha(0.45f));
+                g.drawLine(0.0f, pointY(project->tracks[i].volume), (float) getWidth(), pointY(project->tracks[i].volume), 1.0f);
+            }
+            else
+            {
+                for (size_t n = 0; n < points.size(); ++n)
+                {
+                    const float x = (float) ((points[n].beat - originBeat) * pixelsPerBeat);
+                    const float py = pointY(points[n].value);
+                    if (n == 0)
+                        curve.startNewSubPath(x, py);
+                    else
+                        curve.lineTo(x, py);
+                    g.setColour(juce::Colour(0xfff2f2f2));
+                    g.fillEllipse(x - 3.0f, py - 3.0f, 6.0f, 6.0f);
+                }
+                g.setColour(juce::Colour(0xffd2b14a).withAlpha(project->automationMode ? 0.95f : 0.55f));
+                g.strokePath(curve, juce::PathStrokeType(1.5f));
+            }
+        }
+
         for (const auto& note : project->tracks[i].notes)
         {
             auto box = juce::Rectangle<float>((float) ((note.startBeat - originBeat) * pixelsPerBeat),
@@ -167,6 +205,64 @@ void ArrangementView::mouseDown(const juce::MouseEvent& event)
 {
     grabKeyboardFocus();
     const int track = trackAt(event.y);
+    dragPoint = -1;
+
+    if (project != nullptr && project->automationMode && track >= 0)
+    {
+        project->selectedTrack = track;
+        auto& points = project->tracks[(size_t) track].volumeAutomation;
+        const int rowY = header + track * TrackList::rowHeight;
+        int nearest = -1;
+        float best = 12.0f;
+        for (int i = 0; i < (int) points.size(); ++i)
+        {
+            const float px = (float) ((points[(size_t) i].beat - originBeat) * pixelsPerBeat);
+            const float py = (float) rowY + TrackList::rowHeight - 8.0f
+                - juce::jlimit(0.0f, 1.0f, points[(size_t) i].value) * (TrackList::rowHeight - 14.0f);
+            const float distance = std::hypot(px - (float) event.x, py - (float) event.y);
+            if (distance < best)
+            {
+                best = distance;
+                nearest = i;
+            }
+        }
+
+        auto edit = [&]()
+        {
+            if (event.mods.isPopupMenu() && nearest >= 0)
+            {
+                points.erase(points.begin() + nearest);
+                return;
+            }
+            if (nearest < 0)
+            {
+                AutomationPoint point;
+                point.beat = juce::jmax(0.0, xToBeat(event.x));
+                point.value = juce::jlimit(0.0f, 1.0f,
+                    1.0f - (float) (event.y - rowY - 6) / (float) juce::jmax(1, TrackList::rowHeight - 14));
+                points.push_back(point);
+                nearest = (int) points.size() - 1;
+            }
+            dragPoint = nearest;
+            dragTrack = track;
+            dragClip = -1;
+            dragOrigin = points[(size_t) nearest].beat;
+            dragPointValue = points[(size_t) nearest].value;
+        };
+
+        if (lock != nullptr)
+        {
+            juce::ScopedLock sl(*lock);
+            edit();
+        }
+        else
+            edit();
+
+        if (onChanged) onChanged();
+        repaint();
+        return;
+    }
+
     bool edge = false;
     const int clip = clipAt(track, event.x, edge);
     if (project != nullptr && track >= 0)
@@ -205,8 +301,44 @@ void ArrangementView::mouseDown(const juce::MouseEvent& event)
     if (onChanged) onChanged();
 }
 
+void ArrangementView::mouseUp(const juce::MouseEvent&)
+{
+    if (project == nullptr || dragPoint < 0 || dragTrack < 0 || dragTrack >= (int) project->tracks.size())
+        return;
+    auto& points = project->tracks[(size_t) dragTrack].volumeAutomation;
+    std::sort(points.begin(), points.end(), [](const AutomationPoint& a, const AutomationPoint& b)
+    {
+        return a.beat < b.beat;
+    });
+    dragPoint = -1;
+    repaint();
+}
+
 void ArrangementView::mouseDrag(const juce::MouseEvent& event)
 {
+    if (project != nullptr && dragPoint >= 0 && dragTrack >= 0 && dragTrack < (int) project->tracks.size())
+    {
+        auto& points = project->tracks[(size_t) dragTrack].volumeAutomation;
+        if (dragPoint < (int) points.size())
+        {
+            const double beat = juce::jmax(0.0, dragOrigin + event.getDistanceFromDragStartX() / pixelsPerBeat);
+            const float value = juce::jlimit(0.0f, 1.0f, dragPointValue - (float) event.getDistanceFromDragStartY() / (float) TrackList::rowHeight);
+            if (lock != nullptr)
+            {
+                juce::ScopedLock sl(*lock);
+                points[(size_t) dragPoint].beat = beat;
+                points[(size_t) dragPoint].value = value;
+            }
+            else
+            {
+                points[(size_t) dragPoint].beat = beat;
+                points[(size_t) dragPoint].value = value;
+            }
+        }
+        repaint();
+        return;
+    }
+
     if (project == nullptr || dragClip < 0 || dragTrack < 0)
         return;
     auto& clips = project->tracks[(size_t) dragTrack].clips;

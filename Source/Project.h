@@ -3,6 +3,12 @@
 #include <memory>
 #include <vector>
 
+struct AutomationPoint
+{
+    double beat = 0.0;
+    float value = 0.8f;
+};
+
 struct MidiNote
 {
     double startBeat = 0.0;
@@ -18,6 +24,7 @@ struct Clip
     juce::String name { "Clip" };
     std::shared_ptr<juce::AudioBuffer<float>> audio;
     double sampleRate = 44100.0;
+    double sourceOffset = 0.0;
 };
 
 struct Track
@@ -37,6 +44,27 @@ struct Track
     juce::String pluginPath;
     std::vector<Clip> clips;
     std::vector<MidiNote> notes;
+    std::vector<AutomationPoint> volumeAutomation;
+
+    float volumeAt(double beat) const
+    {
+        if (volumeAutomation.empty())
+            return volume;
+        if (beat <= volumeAutomation.front().beat)
+            return volumeAutomation.front().value;
+        for (size_t i = 1; i < volumeAutomation.size(); ++i)
+        {
+            const auto& a = volumeAutomation[i - 1];
+            const auto& b = volumeAutomation[i];
+            if (beat <= b.beat)
+            {
+                const double span = juce::jmax(0.0001, b.beat - a.beat);
+                const float mix = (float) ((beat - a.beat) / span);
+                return a.value + mix * (b.value - a.value);
+            }
+        }
+        return volumeAutomation.back().value;
+    }
 };
 
 struct Project
@@ -48,6 +76,7 @@ struct Project
     int selectedNote = -1;
     bool loopEnabled = false;
     bool metronome = true;
+    bool automationMode = false;
     double loopStart = 0.0;
     double loopEnd = 8.0;
     std::vector<Track> tracks;
@@ -75,6 +104,12 @@ struct Project
             track.clips.push_back({ 0.0, 8.0, "Clip 1" });
             if (i % 2 == 0)
                 track.clips.push_back({ 12.0, 4.0, "Clip 2" });
+            if (i == 0)
+            {
+                track.volumeAutomation.push_back({ 0.0, 0.25f });
+                track.volumeAutomation.push_back({ 4.0, 0.95f });
+                track.volumeAutomation.push_back({ 8.0, 0.35f });
+            }
             if (i == 1)
             {
                 track.notes.push_back({ 0.0, 1.0, 60, 0.8f });

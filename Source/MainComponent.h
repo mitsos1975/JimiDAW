@@ -29,6 +29,7 @@ private:
     void commitRecording();
     void showAudioSettings();
     void refreshEditors();
+    void splitSelectedClip();
     void chooseFile(const juce::String& title, const juce::String& filter, int flags,
                     const std::function<void(const juce::File&)>& use);
 
@@ -49,6 +50,8 @@ private:
     juce::TextButton pianoButton { "Piano" };
     juce::TextButton loopButton { "Loop" };
     juce::TextButton clickButton { "Click" };
+    juce::TextButton autoButton { "Auto" };
+    juce::TextButton splitButton { "Split" };
     std::unique_ptr<AudioSettingsWindow> audioSettings;
     std::unique_ptr<PluginWindow> pluginWindow;
     std::unique_ptr<juce::FileChooser> chooser;

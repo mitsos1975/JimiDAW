@@ -205,8 +205,15 @@ MainComponent::MainComponent()
         project.metronome = !project.metronome;
         clickButton.setColour(juce::TextButton::buttonColourId, project.metronome ? juce::Colour(0xff3d5a80) : juce::Colour(0xff2e3236));
     };
+    autoButton.onClick = [this]
+    {
+        project.automationMode = !project.automationMode;
+        autoButton.setColour(juce::TextButton::buttonColourId, project.automationMode ? juce::Colour(0xff3d5a80) : juce::Colour(0xff2e3236));
+        arrangement.repaint();
+    };
+    splitButton.onClick = [this] { splitSelectedClip(); };
 
-    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton })
+    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton })
         addAndMakeVisible(button);
     addAndMakeVisible(transport);
     addAndMakeVisible(trackList);
@@ -245,6 +252,32 @@ void MainComponent::refreshEditors()
     trackList.repaint();
     piano.repaint();
     mixer.repaint();
+}
+
+
+void MainComponent::splitSelectedClip()
+{
+    if (project.selectedTrack < 0 || project.selectedTrack >= (int) project.tracks.size())
+        return;
+    auto& clips = project.tracks[(size_t) project.selectedTrack].clips;
+    if (project.selectedClip < 0 || project.selectedClip >= (int) clips.size())
+        return;
+
+    const double beat = engine.getBeat();
+    juce::ScopedLock sl(engine.getLock());
+    auto& clip = clips[(size_t) project.selectedClip];
+    if (beat <= clip.startBeat + 0.05 || beat >= clip.startBeat + clip.lengthBeats - 0.05)
+        return;
+
+    Clip right = clip;
+    const double leftLength = beat - clip.startBeat;
+    right.startBeat = beat;
+    right.lengthBeats = clip.lengthBeats - leftLength;
+    right.name = clip.name + " b";
+    right.sourceOffset = clip.sourceOffset + leftLength * 60.0 / juce::jmax(40.0, project.bpm);
+    clip.lengthBeats = leftLength;
+    clips.push_back(std::move(right));
+    arrangement.repaint();
 }
 
 void MainComponent::toggleRecord()
@@ -349,9 +382,9 @@ void MainComponent::resized()
 {
     auto area = getLocalBounds();
     auto tools = area.removeFromTop(36).reduced(6, 4);
-    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton })
+    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton })
     {
-        button->setBounds(tools.removeFromLeft(78));
+        button->setBounds(tools.removeFromLeft(68));
         tools.removeFromLeft(4);
     }
     transport.setBounds(area.removeFromTop(48));

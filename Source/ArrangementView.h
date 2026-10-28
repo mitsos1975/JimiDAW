@@ -15,6 +15,7 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void mouseUp(const juce::MouseEvent&) override;
 
     static constexpr int header = 28;
 
@@ -30,6 +31,8 @@ private:
     double pixelsPerBeat = 32.0;
     int dragTrack = -1;
     int dragClip = -1;
+    int dragPoint = -1;
     bool dragEdge = false;
     double dragOrigin = 0.0;
+    float dragPointValue = 0.8f;
 };

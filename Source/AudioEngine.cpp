@@ -272,7 +272,7 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
                         continue;
                     if (clip.audio != nullptr && clip.audio->getNumSamples() > 1)
                     {
-                        const double seconds = (now - clip.startBeat) * 60.0 / tempo;
+                        const double seconds = (now - clip.startBeat) * 60.0 / tempo + clip.sourceOffset;
                         const double position = seconds * clip.sampleRate;
                         const int index = (int) position;
                         if (index >= 0 && index + 1 < clip.audio->getNumSamples())
@@ -365,19 +365,20 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
             }
 
             const float angle = (track.pan + 1.0f) * 0.5f * juce::MathConstants<float>::halfPi;
-            const float leftGain = std::cos(angle) * track.volume;
-            const float rightGain = std::sin(angle) * track.volume;
+            const float leftPan = std::cos(angle);
+            const float rightPan = std::sin(angle);
             float trackPeak = 0.0f;
             for (int sample = 0; sample < numSamples; ++sample)
             {
                 const float value = trackAudio.getSample(trackIndex, sample);
-                trackPeak = juce::jmax(trackPeak, std::abs(value));
+                const float gain = track.volumeAt(blockStart + sample * beatsPerSample);
+                trackPeak = juce::jmax(trackPeak, std::abs(value * gain));
                 if (numOutputs > 0)
-                    outputs[0][sample] += value * leftGain;
+                    outputs[0][sample] += value * leftPan * gain;
                 if (numOutputs > 1)
-                    outputs[1][sample] += value * rightGain;
+                    outputs[1][sample] += value * rightPan * gain;
                 else if (numOutputs == 1)
-                    outputs[0][sample] += value * 0.5f * (leftGain + rightGain);
+                    outputs[0][sample] += value * 0.5f * (leftPan + rightPan) * gain;
             }
             rememberPeak(trackIndex, trackPeak);
         }

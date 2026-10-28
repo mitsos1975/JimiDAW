@@ -78,6 +78,7 @@ juce::Result Session::save(const Project& project, const juce::File& file)
             clipObj->setProperty("length", clip.lengthBeats);
             clipObj->setProperty("name", clip.name);
             clipObj->setProperty("sampleRate", clip.sampleRate);
+            clipObj->setProperty("offset", clip.sourceOffset);
             if (clip.audio != nullptr && clip.audio->getNumSamples() > 0)
             {
                 const auto wavName = juce::String(ti) + "_" + juce::String(ci) + ".wav";
@@ -100,6 +101,16 @@ juce::Result Session::save(const Project& project, const juce::File& file)
             notes.add(juce::var(noteObj));
         }
         obj->setProperty("notes", notes);
+
+        juce::Array<juce::var> automation;
+        for (const auto& point : track.volumeAutomation)
+        {
+            auto* pointObj = new juce::DynamicObject();
+            pointObj->setProperty("beat", point.beat);
+            pointObj->setProperty("value", point.value);
+            automation.add(juce::var(pointObj));
+        }
+        obj->setProperty("volumeAutomation", automation);
         tracks.add(juce::var(obj));
     }
     root->setProperty("tracks", tracks);
@@ -163,6 +174,7 @@ juce::Result Session::load(Project& project, const juce::File& file)
                     clip.lengthBeats = (double) clipObj->getProperty("length");
                     clip.name = clipObj->getProperty("name").toString();
                     clip.sampleRate = clipObj->hasProperty("sampleRate") ? (double) clipObj->getProperty("sampleRate") : 44100.0;
+                    clip.sourceOffset = clipObj->hasProperty("offset") ? (double) clipObj->getProperty("offset") : 0.0;
                     const auto wavName = clipObj->getProperty("file").toString();
                     if (wavName.isNotEmpty())
                     {
@@ -188,6 +200,20 @@ juce::Result Session::load(Project& project, const juce::File& file)
                     note.note = (int) noteObj->getProperty("note");
                     note.velocity = (float) (double) noteObj->getProperty("velocity");
                     track.notes.push_back(note);
+                }
+            }
+
+            if (auto* automation = obj->getProperty("volumeAutomation").getArray())
+            {
+                for (const auto& pointVar : *automation)
+                {
+                    auto* pointObj = pointVar.getDynamicObject();
+                    if (pointObj == nullptr)
+                        continue;
+                    AutomationPoint point;
+                    point.beat = (double) pointObj->getProperty("beat");
+                    point.value = (float) (double) pointObj->getProperty("value");
+                    track.volumeAutomation.push_back(point);
                 }
             }
 
