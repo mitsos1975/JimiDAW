@@ -26,14 +26,21 @@ cmake -S . -B build -DJIMIDAW_ASIO=ON
 cmake --build build --config Release
 ```
 
-Without that flag the app uses WASAPI, which is enough to hear playback.
+Without that flag the app uses WASAPI.
 
 ## What this version does
 
-- Opens an audio device and shows the device setup menu
-- Play, stop, and tempo
-- Moving playhead and metronome
-- Eight tracks, clips, mute, solo, and faders
-- A tone while the playhead is inside a clip
+- Audio device window (Audio button): input, output, sample rate, buffer size
+- Play, stop, tempo, and click on the arrangement to move the playhead
+- Metronome
+- Eight tracks, mute, solo, arm, and faders
+- Record the armed track (the red R) into a clip, then play that audio back
+- Placeholder tones on clips that have no recording yet
 
-Not in this version yet: recording, audio files on clips, piano roll, or VST hosting.
+## Record
+
+1. Click Audio and choose the input that your microphone or interface is using.
+2. Click the red R on the track you want.
+3. Click Record. Click Record again, or Stop, to finish the clip.
+
+Not in this version yet: saving a project, editing clip edges, a piano roll, or VST hosting.

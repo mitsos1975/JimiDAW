@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <memory>
 #include <vector>
 
 struct Clip
@@ -7,6 +8,8 @@ struct Clip
     double startBeat = 0.0;
     double lengthBeats = 4.0;
     juce::String name { "Clip" };
+    std::shared_ptr<juce::AudioBuffer<float>> audio;
+    double sampleRate = 44100.0;
 };
 
 struct Track
@@ -16,12 +19,14 @@ struct Track
     float volume = 0.8f;
     bool mute = false;
     bool solo = false;
+    bool armed = false;
     std::vector<Clip> clips;
 };
 
 struct Project
 {
     double bpm = 120.0;
+    int armedTrack = 0;
     std::vector<Track> tracks;
 
     static Project demo()
@@ -37,6 +42,7 @@ struct Project
             Track track;
             track.name = "Audio " + juce::String(i + 1);
             track.colour = colours[i];
+            track.armed = i == 0;
             track.clips.push_back({ 0.0, 8.0, "Clip 1" });
             if (i % 2 == 0)
                 track.clips.push_back({ 12.0, 4.0, "Clip 2" });

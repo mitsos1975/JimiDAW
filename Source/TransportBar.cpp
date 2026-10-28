@@ -2,10 +2,11 @@
 
 TransportBar::TransportBar()
 {
-    playButton.addListener(this);
-    stopButton.addListener(this);
-    addAndMakeVisible(playButton);
-    addAndMakeVisible(stopButton);
+    for (auto* button : { &playButton, &stopButton, &recordButton, &audioButton })
+    {
+        button->addListener(this);
+        addAndMakeVisible(button);
+    }
 
     tempoSlider.setRange(40.0, 280.0, 1.0);
     tempoSlider.setValue(120.0, juce::dontSendNotification);
@@ -23,6 +24,12 @@ void TransportBar::setPlaying(bool playing)
     playButton.setButtonText(playing ? "Pause" : "Play");
     playButton.setColour(juce::TextButton::buttonColourId,
                           playing ? juce::Colour(0xff2e7d4f) : juce::Colour(0xff2e3236));
+}
+
+void TransportBar::setRecording(bool recording)
+{
+    recordButton.setColour(juce::TextButton::buttonColourId,
+                            recording ? juce::Colour(0xff9a2b2b) : juce::Colour(0xff2e3236));
 }
 
 void TransportBar::setBeat(double beat)
@@ -50,6 +57,10 @@ void TransportBar::resized()
     playButton.setBounds(area.removeFromLeft(72));
     area.removeFromLeft(6);
     stopButton.setBounds(area.removeFromLeft(72));
+    area.removeFromLeft(6);
+    recordButton.setBounds(area.removeFromLeft(78));
+    area.removeFromLeft(6);
+    audioButton.setBounds(area.removeFromLeft(72));
     area.removeFromLeft(16);
     positionLabel.setBounds(area.removeFromLeft(70));
     tempoLabel.setBounds(area.removeFromLeft(36));
@@ -60,6 +71,8 @@ void TransportBar::buttonClicked(juce::Button* button)
 {
     if (button == &playButton && onPlay) onPlay();
     if (button == &stopButton && onStop) onStop();
+    if (button == &recordButton && onRecord) onRecord();
+    if (button == &audioButton && onAudio) onAudio();
 }
 
 void TransportBar::sliderValueChanged(juce::Slider* slider)

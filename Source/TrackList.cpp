@@ -29,11 +29,14 @@ void TrackList::paint(juce::Graphics& g)
         g.setFont(14.0f);
         g.drawText(project->tracks[i].name, text.removeFromTop(20), juce::Justification::centredLeft);
 
-        g.setFont(11.0f);
+        auto buttons = text.removeFromTop(18);
+        g.setFont(12.0f);
         g.setColour(project->tracks[i].mute ? juce::Colour(0xffe85d75) : juce::Colour(0xff9aa0a6));
-        g.drawText(project->tracks[i].mute ? "M" : "m", text.removeFromLeft(18), juce::Justification::centred);
+        g.drawText(project->tracks[i].mute ? "M" : "m", buttons.removeFromLeft(22), juce::Justification::centred);
         g.setColour(project->tracks[i].solo ? juce::Colour(0xfff0a202) : juce::Colour(0xff9aa0a6));
-        g.drawText(project->tracks[i].solo ? "S" : "s", text.removeFromLeft(18), juce::Justification::centred);
+        g.drawText(project->tracks[i].solo ? "S" : "s", buttons.removeFromLeft(22), juce::Justification::centred);
+        g.setColour(project->tracks[i].armed ? juce::Colour(0xffff4d4d) : juce::Colour(0xff9aa0a6));
+        g.drawText(project->tracks[i].armed ? "R" : "r", buttons.removeFromLeft(22), juce::Justification::centred);
     }
 }
 
@@ -46,11 +49,22 @@ void TrackList::mouseDown(const juce::MouseEvent& event)
     if (index < 0 || index >= (int) project->tracks.size())
         return;
 
+    const int localY = (event.y - header) - index * rowHeight;
     auto& track = project->tracks[(size_t) index];
-    if (event.x < 90)
-        track.mute = !track.mute;
-    else if (event.x < 110)
-        track.solo = !track.solo;
+    if (localY > 28)
+    {
+        if (event.x < 70)
+            track.mute = !track.mute;
+        else if (event.x < 92)
+            track.solo = !track.solo;
+        else if (event.x < 114)
+        {
+            for (auto& other : project->tracks)
+                other.armed = false;
+            track.armed = true;
+            project->armedTrack = index;
+        }
+    }
 
     repaint();
     if (onChanged)

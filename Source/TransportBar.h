@@ -8,10 +8,13 @@ class TransportBar : public juce::Component,
 public:
     std::function<void()> onPlay;
     std::function<void()> onStop;
+    std::function<void()> onRecord;
+    std::function<void()> onAudio;
     std::function<void(double)> onTempoChanged;
 
     TransportBar();
     void setPlaying(bool playing);
+    void setRecording(bool recording);
     void setBeat(double beat);
     void setBpm(double bpm);
     void paint(juce::Graphics&) override;
@@ -23,6 +26,8 @@ private:
 
     juce::TextButton playButton { "Play" };
     juce::TextButton stopButton { "Stop" };
+    juce::TextButton recordButton { "Record" };
+    juce::TextButton audioButton { "Audio" };
     juce::Slider tempoSlider;
     juce::Label tempoLabel;
     juce::Label positionLabel;

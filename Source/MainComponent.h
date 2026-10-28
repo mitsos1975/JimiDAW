@@ -8,6 +8,8 @@
 #include "MixerView.h"
 #include "Project.h"
 
+class AudioSettingsWindow;
+
 class MainComponent : public juce::Component,
                       private juce::Timer
 {
@@ -19,6 +21,8 @@ public:
 
 private:
     void timerCallback() override;
+    void toggleRecord();
+    void showAudioSettings();
 
     DawLookAndFeel lookAndFeel;
     Project project;
@@ -27,4 +31,5 @@ private:
     TrackList trackList;
     ArrangementView arrangement;
     MixerView mixer;
+    std::unique_ptr<AudioSettingsWindow> audioSettings;
 };
