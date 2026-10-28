@@ -59,28 +59,33 @@ void ArrangementView::drawWaveform(juce::Graphics& g, const Clip& clip, juce::Re
         float peak = 0.0f;
         for (int i = start; i < end; ++i)
             peak = juce::jmax(peak, std::abs(clip.audio->getSample(0, i)));
-        const float y = box.getCentreY() - peak * box.getHeight() * 0.45f;
-        if (x == 0)
-            path.startNewSubPath(box.getX(), y);
-        else
-            path.lineTo(box.getX() + (float) x, y);
+        const float half = peak * box.getHeight() * 0.42f;
+        const float cx = box.getX() + (float) x;
+        g.drawLine(cx, box.getCentreY() - half, cx, box.getCentreY() + half, 1.0f);
+        juce::ignoreUnused(path);
     }
-    g.setColour(juce::Colour(0xff111315).withAlpha(0.85f));
-    g.strokePath(path, juce::PathStrokeType(1.0f));
 }
 
 void ArrangementView::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff16181b));
-    g.setColour(juce::Colour(0xff2a2e32));
-    for (double bar = std::floor(originBeat / 4.0) * 4.0; (bar - originBeat) * pixelsPerBeat < getWidth(); bar += 4.0)
+    g.fillAll(juce::Colour(0xff121212));
+    g.setColour(juce::Colour(0xff1c1c1c));
+    g.fillRect(0, 0, getWidth(), header);
+    g.setColour(juce::Colour(0xff0a0a0a));
+    g.drawLine(0.0f, (float) header - 1.0f, (float) getWidth(), (float) header - 1.0f);
+
+    g.setFont(juce::FontOptions(11.0f));
+    for (double bar = std::floor(originBeat / 4.0) * 4.0; (bar - originBeat) * pixelsPerBeat < getWidth(); bar += 1.0)
     {
         const int x = (int) ((bar - originBeat) * pixelsPerBeat);
+        const bool downbeat = std::fmod(bar, 4.0) < 0.001;
+        g.setColour(downbeat ? juce::Colour(0xff303030) : juce::Colour(0xff222222));
         g.drawVerticalLine(x, (float) header, (float) getHeight());
-        g.setColour(juce::Colour(0xff9aa0a6));
-        g.setFont(11.0f);
-        g.drawText(juce::String((int) (bar / 4.0) + 1), x + 4, 4, 40, header - 8, juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff2a2e32));
+        if (downbeat)
+        {
+            g.setColour(juce::Colour(0xffc8c8c8));
+            g.drawText(juce::String((int) (bar / 4.0) + 1), x + 4, 2, 36, header - 4, juce::Justification::centredLeft);
+        }
     }
 
     if (project == nullptr)
@@ -89,33 +94,52 @@ void ArrangementView::paint(juce::Graphics& g)
     for (size_t i = 0; i < project->tracks.size(); ++i)
     {
         const int y = header + (int) i * TrackList::rowHeight;
-        g.setColour(juce::Colour(0xff22262a).withAlpha(i % 2 == 0 ? 1.0f : 0.65f));
+        g.setColour(juce::Colour(i % 2 == 0 ? 0xff161616 : 0xff131313));
         g.fillRect(0, y, getWidth(), TrackList::rowHeight - 1);
+        g.setColour(juce::Colour(0xff0e0e0e));
+        g.drawLine(0.0f, (float) (y + TrackList::rowHeight - 1), (float) getWidth(), (float) (y + TrackList::rowHeight - 1));
+
+        const auto tone = project->tracks[i].colour.withSaturation(0.40f).withBrightness(0.55f);
         for (int c = 0; c < (int) project->tracks[i].clips.size(); ++c)
         {
             const auto& clip = project->tracks[i].clips[(size_t) c];
             auto box = juce::Rectangle<float>((float) ((clip.startBeat - originBeat) * pixelsPerBeat),
-                                              (float) y + 8.0f,
+                                              (float) y + 6.0f,
                                               (float) (clip.lengthBeats * pixelsPerBeat),
-                                              (float) TrackList::rowHeight - 16.0f);
+                                              (float) TrackList::rowHeight - 12.0f);
             if (box.getRight() < 0 || box.getX() > getWidth())
                 continue;
-            g.setColour(project->tracks[i].colour.withAlpha(clip.audio != nullptr ? 0.95f : 0.75f));
-            g.fillRoundedRectangle(box, 4.0f);
-            drawWaveform(g, clip, box);
-            g.setColour(project->selectedTrack == (int) i && project->selectedClip == c ? juce::Colour(0xffffd166) : juce::Colours::black.withAlpha(0.35f));
-            g.drawRoundedRectangle(box, 4.0f, project->selectedClip == c ? 2.0f : 1.0f);
-            g.setColour(juce::Colour(0xff111315));
-            g.drawText(clip.name, box.reduced(6.0f, 0.0f).removeFromTop(16.0f), juce::Justification::centredLeft);
+
+            g.setColour(tone.darker(0.55f));
+            g.fillRect(box);
+            g.setColour(tone);
+            g.fillRect(box.removeFromTop(14.0f));
+            auto body = box;
+            g.setColour(juce::Colour(0xffd8e2ea).withAlpha(0.85f));
+            drawWaveform(g, clip, body.reduced(1.0f, 2.0f));
+
+            const bool selected = project->selectedTrack == (int) i && project->selectedClip == c;
+            g.setColour(selected ? juce::Colour(0xfff2f2f2) : juce::Colour(0xff000000).withAlpha(0.55f));
+            g.drawRect(juce::Rectangle<float>((float) ((clip.startBeat - originBeat) * pixelsPerBeat),
+                                              (float) y + 6.0f,
+                                              (float) (clip.lengthBeats * pixelsPerBeat),
+                                              (float) TrackList::rowHeight - 12.0f),
+                       selected ? 1.5f : 1.0f);
+            g.setColour(juce::Colour(0xff111111));
+            g.setFont(juce::FontOptions(11.0f));
+            g.drawText(clip.name,
+                       juce::Rectangle<float>((float) ((clip.startBeat - originBeat) * pixelsPerBeat) + 6.0f,
+                                              (float) y + 6.0f, box.getWidth(), 14.0f),
+                       juce::Justification::centredLeft, true);
         }
 
         for (const auto& note : project->tracks[i].notes)
         {
             auto box = juce::Rectangle<float>((float) ((note.startBeat - originBeat) * pixelsPerBeat),
-                                              (float) y + TrackList::rowHeight - 18.0f,
+                                              (float) y + TrackList::rowHeight - 16.0f,
                                               (float) juce::jmax(3.0, note.lengthBeats * pixelsPerBeat),
-                                              8.0f);
-            g.setColour(juce::Colour(0xffffd166).withAlpha(0.9f));
+                                              6.0f);
+            g.setColour(tone.brighter(0.35f));
             g.fillRect(box);
         }
     }
@@ -124,13 +148,19 @@ void ArrangementView::paint(juce::Graphics& g)
     {
         const float a = (float) ((project->loopStart - originBeat) * pixelsPerBeat);
         const float b = (float) ((project->loopEnd - originBeat) * pixelsPerBeat);
-        g.setColour(juce::Colour(0xff3d8bfd).withAlpha(0.18f));
+        g.setColour(juce::Colour(0xff8fb4ff).withAlpha(0.16f));
         g.fillRect(a, 0.0f, b - a, (float) header);
+        g.setColour(juce::Colour(0xff8fb4ff));
+        g.drawLine(a, 0.0f, a, (float) header, 2.0f);
+        g.drawLine(b, 0.0f, b, (float) header, 2.0f);
     }
 
     const float playhead = (float) ((beat - originBeat) * pixelsPerBeat);
-    g.setColour(juce::Colour(0xfff0a202));
-    g.drawLine(playhead, 0.0f, playhead, (float) getHeight(), 2.0f);
+    g.setColour(juce::Colour(0xfff2f2f2));
+    juce::Path flag;
+    flag.addTriangle(playhead - 6.0f, 0.0f, playhead + 6.0f, 0.0f, playhead, 10.0f);
+    g.fillPath(flag);
+    g.drawLine(playhead, 0.0f, playhead, (float) getHeight(), 1.0f);
 }
 
 void ArrangementView::mouseDown(const juce::MouseEvent& event)
