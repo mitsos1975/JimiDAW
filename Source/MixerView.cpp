@@ -6,6 +6,23 @@ void MixerView::setProject(Project* newProject)
     rebuild();
 }
 
+void MixerView::setEngine(AudioEngine* newEngine)
+{
+    engine = newEngine;
+    startTimerHz(30);
+}
+
+void MixerView::timerCallback()
+{
+    if (engine == nullptr || project == nullptr)
+        return;
+    float peaks[64];
+    const int count = juce::jmin(64, (int) project->tracks.size());
+    for (int i = 0; i < count; ++i)
+        peaks[i] = engine->getTrackPeak(i);
+    setLevels(peaks, count, engine->getMasterPeak());
+}
+
 void MixerView::setLevels(const float* peaks, int count, float master)
 {
     const int n = juce::jmin(count, 64);
@@ -65,16 +82,17 @@ void MixerView::paintMeter(juce::Graphics& g, juce::Rectangle<int> area, float l
     g.fillRect(area);
     const float clamped = juce::jlimit(0.0f, 1.0f, level);
     const int filled = (int) (area.getHeight() * clamped);
-    auto lit = area.removeFromBottom(filled);
-    for (int y = lit.getY(); y < lit.getBottom(); ++y)
+    const int x = area.getX();
+    const int width = area.getWidth();
+    const int bottom = area.getBottom();
+    for (int y = bottom - filled; y < bottom; ++y)
     {
-        const float t = 1.0f - (float) (y - lit.getY()) / (float) juce::jmax(1, lit.getHeight());
-        const float dbPosition = clamped * t;
-        juce::Colour colour = dbPosition > 0.92f ? juce::Colour(0xffd24a4a)
-                            : dbPosition > 0.75f ? juce::Colour(0xffd2b14a)
-                                                 : juce::Colour(0xff7dcea0);
+        const float position = (float) (bottom - y) / (float) juce::jmax(1, area.getHeight());
+        juce::Colour colour = position > 0.92f ? juce::Colour(0xffd24a4a)
+                            : position > 0.75f ? juce::Colour(0xffd2b14a)
+                                               : juce::Colour(0xff7dcea0);
         g.setColour(colour);
-        g.fillRect(area.getX(), y, area.getWidth(), 1);
+        g.fillRect(x, y, width, 1);
     }
 }
 
