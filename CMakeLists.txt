@@ -19,8 +19,8 @@ juce_add_gui_app(JimiDAW
     PRODUCT_NAME "JimiDAW"
     COMPANY_NAME "JimiDAW"
     BUNDLE_ID "com.jimidaw.app"
-    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/JimiDAW.ico"
-    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/Resources/JimiDAW.ico"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/JimiDAW.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/Resources/JimiDAW.png"
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
 )
