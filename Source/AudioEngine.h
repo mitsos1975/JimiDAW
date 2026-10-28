@@ -9,6 +9,7 @@ public:
     ~AudioEngine() override;
 
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
+    juce::CriticalSection& getLock() { return lock; }
 
     void setProject(Project* newProject);
     void setPlaying(bool shouldPlay);
@@ -21,6 +22,11 @@ public:
     Clip stopRecording();
     bool isRecording() const { return recording.load(); }
 
+    juce::String loadPlugin(int trackIndex, const juce::File& file);
+    void clearPlugin(int trackIndex);
+    juce::AudioPluginInstance* getPlugin(int trackIndex);
+    juce::Result exportWav(const juce::File& file);
+
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
     void audioDeviceStopped() override;
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
@@ -31,9 +37,13 @@ public:
                                           const juce::AudioIODeviceCallbackContext& context) override;
 
 private:
-    float renderSample(float input);
+    void ensureDsp(int trackCount);
+    void renderUnlocked(const float* input, float* const* outputs, int numOutputs, int numSamples,
+                        bool live, bool withClick, bool allowLoop);
 
     juce::AudioDeviceManager deviceManager;
+    juce::AudioPluginFormatManager formatManager;
+    juce::CriticalSection lock;
     Project* project = nullptr;
     std::atomic<bool> playing { false };
     std::atomic<bool> recording { false };
@@ -41,9 +51,18 @@ private:
     std::atomic<double> bpm { 120.0 };
     std::atomic<int> recordWrite { 0 };
     double sampleRate = 44100.0;
+    int blockSize = 512;
     double recordStartBeat = 0.0;
     double clickPhase = 0.0;
     int clickSamplesLeft = 0;
     int lastWholeBeat = -1;
     juce::AudioBuffer<float> recordBuffer;
+    juce::AudioBuffer<float> trackAudio;
+    juce::AudioBuffer<float> pluginBuffer;
+    std::vector<juce::dsp::IIR::Filter<float>> lowFilters;
+    std::vector<juce::dsp::IIR::Filter<float>> midFilters;
+    std::vector<juce::dsp::IIR::Filter<float>> highFilters;
+    std::vector<float> compEnv;
+    std::vector<float> phases;
+    std::vector<std::unique_ptr<juce::AudioPluginInstance>> plugins;
 };
