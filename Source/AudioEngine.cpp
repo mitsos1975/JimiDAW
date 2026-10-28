@@ -2,6 +2,7 @@
 
 AudioEngine::AudioEngine()
 {
+    formatManager.addFormat(new juce::VST3PluginFormat());
     deviceManager.initialise(2, 2, nullptr, true);
     deviceManager.addAudioCallback(this);
 }
@@ -14,9 +15,13 @@ AudioEngine::~AudioEngine()
 
 void AudioEngine::setProject(Project* newProject)
 {
+    juce::ScopedLock sl(lock);
     project = newProject;
     if (project != nullptr)
+    {
         bpm.store(project->bpm);
+        ensureDsp((int) project->tracks.size());
+    }
 }
 
 void AudioEngine::setPlaying(bool shouldPlay)
@@ -28,9 +33,10 @@ void AudioEngine::setPlaying(bool shouldPlay)
 
 void AudioEngine::setBpm(double newBpm)
 {
-    bpm.store(juce::jlimit(40.0, 280.0, newBpm));
+    const double value = juce::jlimit(40.0, 280.0, newBpm);
+    bpm.store(value);
     if (project != nullptr)
-        project->bpm = bpm.load();
+        project->bpm = value;
 }
 
 void AudioEngine::setBeat(double newBeat)
@@ -39,8 +45,31 @@ void AudioEngine::setBeat(double newBeat)
     lastWholeBeat = (int) std::floor(beat.load()) - 1;
 }
 
+void AudioEngine::ensureDsp(int trackCount)
+{
+    trackCount = juce::jmax(0, trackCount);
+    if ((int) plugins.size() != trackCount)
+        plugins.resize((size_t) trackCount);
+    if ((int) lowFilters.size() == trackCount)
+        return;
+
+    lowFilters.resize((size_t) trackCount);
+    midFilters.resize((size_t) trackCount);
+    highFilters.resize((size_t) trackCount);
+    compEnv.assign((size_t) trackCount, 0.0f);
+    phases.assign((size_t) trackCount * 128, 0.0f);
+    auto pass = new juce::dsp::IIR::Coefficients<float>(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+    for (int i = 0; i < trackCount; ++i)
+    {
+        lowFilters[(size_t) i].coefficients = pass;
+        midFilters[(size_t) i].coefficients = pass;
+        highFilters[(size_t) i].coefficients = pass;
+    }
+}
+
 void AudioEngine::startRecording()
 {
+    juce::ScopedLock sl(lock);
     const double rate = sampleRate > 1000.0 ? sampleRate : 44100.0;
     recordBuffer.setSize(1, (int) (rate * 180.0), false, true, true);
     recordBuffer.clear();
@@ -52,9 +81,9 @@ void AudioEngine::startRecording()
 
 Clip AudioEngine::stopRecording()
 {
+    juce::ScopedLock sl(lock);
     recording.store(false);
     const int count = juce::jlimit(0, recordBuffer.getNumSamples(), recordWrite.load());
-
     Clip clip;
     clip.startBeat = recordStartBeat;
     clip.name = "Record";
@@ -69,9 +98,65 @@ Clip AudioEngine::stopRecording()
     return clip;
 }
 
+juce::String AudioEngine::loadPlugin(int trackIndex, const juce::File& file)
+{
+    juce::OwnedArray<juce::PluginDescription> types;
+    for (int i = 0; i < formatManager.getNumFormats(); ++i)
+        formatManager.getFormat(i)->findAllTypesForFile(types, file.getFullPathName());
+    if (types.isEmpty())
+        return "That file does not contain a VST3 plugin.";
+
+    juce::String error;
+    auto instance = formatManager.createPluginInstance(*types[0], sampleRate, blockSize, error);
+    if (instance == nullptr)
+        return error.isNotEmpty() ? error : "Could not open the plugin.";
+
+    instance->enableAllBuses();
+    instance->prepareToPlay(sampleRate, blockSize);
+
+    juce::ScopedLock sl(lock);
+    const int needed = project != nullptr ? juce::jmax((int) project->tracks.size(), trackIndex + 1) : trackIndex + 1;
+    ensureDsp(needed);
+    if (trackIndex >= 0 && trackIndex < (int) plugins.size())
+        plugins[(size_t) trackIndex] = std::move(instance);
+    if (project != nullptr && trackIndex >= 0 && trackIndex < (int) project->tracks.size())
+        project->tracks[(size_t) trackIndex].pluginPath = file.getFullPathName();
+    return {};
+}
+
+void AudioEngine::clearPlugin(int trackIndex)
+{
+    juce::ScopedLock sl(lock);
+    if (trackIndex >= 0 && trackIndex < (int) plugins.size())
+        plugins[(size_t) trackIndex].reset();
+    if (project != nullptr && trackIndex >= 0 && trackIndex < (int) project->tracks.size())
+        project->tracks[(size_t) trackIndex].pluginPath.clear();
+}
+
+juce::AudioPluginInstance* AudioEngine::getPlugin(int trackIndex)
+{
+    juce::ScopedLock sl(lock);
+    if (trackIndex < 0 || trackIndex >= (int) plugins.size())
+        return nullptr;
+    return plugins[(size_t) trackIndex].get();
+}
+
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
+    juce::ScopedLock sl(lock);
     sampleRate = device != nullptr ? device->getCurrentSampleRate() : 44100.0;
+    blockSize = device != nullptr ? juce::jmax(32, device->getCurrentBufferSizeSamples()) : 512;
+    lowFilters.clear();
+    if (project != nullptr)
+        ensureDsp((int) project->tracks.size());
+    for (auto& plugin : plugins)
+    {
+        if (plugin != nullptr)
+        {
+            plugin->releaseResources();
+            plugin->prepareToPlay(sampleRate, blockSize);
+        }
+    }
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -80,92 +165,248 @@ void AudioEngine::audioDeviceStopped()
     recording.store(false);
 }
 
-float AudioEngine::renderSample(float input)
+void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int numOutputs,
+                                 int numSamples, bool live, bool withClick, bool allowLoop)
 {
-    const bool running = playing.load() || recording.load();
-    if (project == nullptr || !running)
-        return 0.0f;
+    if (outputs == nullptr || numOutputs <= 0 || numSamples <= 0)
+        return;
+    for (int channel = 0; channel < numOutputs; ++channel)
+        if (outputs[channel] != nullptr)
+            juce::FloatVectorOperations::clear(outputs[channel], numSamples);
 
-    const double beatsPerSample = bpm.load() / 60.0 / sampleRate;
-    const double now = beat.load();
-    const int whole = (int) std::floor(now);
-    if (whole != lastWholeBeat)
-    {
-        lastWholeBeat = whole;
-        clickSamplesLeft = (int) (0.03 * sampleRate);
-        clickPhase = 0.0;
-    }
+    if (project == nullptr)
+        return;
 
-    float sample = 0.0f;
-    if (clickSamplesLeft > 0)
-    {
-        const double freq = (whole % 4 == 0) ? 1760.0 : 1174.0;
-        sample += (float) (0.12 * std::sin(clickPhase));
-        clickPhase += juce::MathConstants<double>::twoPi * freq / sampleRate;
-        --clickSamplesLeft;
-    }
+    const int trackCount = (int) project->tracks.size();
+    ensureDsp(trackCount);
+    if (trackAudio.getNumChannels() < trackCount || trackAudio.getNumSamples() < numSamples)
+        trackAudio.setSize(juce::jmax(1, trackCount), numSamples, false, false, true);
+    trackAudio.clear();
 
-    if (recording.load())
-    {
-        const int index = recordWrite.load();
-        if (index < recordBuffer.getNumSamples())
-        {
-            recordBuffer.setSample(0, index, input);
-            recordWrite.store(index + 1);
-        }
-        else
-        {
-            recording.store(false);
-        }
-    }
-
+    const double rate = sampleRate > 1000.0 ? sampleRate : 44100.0;
+    const double tempo = bpm.load();
+    const double beatsPerSample = tempo / 60.0 / rate;
+    double cursor = beat.load();
+    const bool running = live ? (playing.load() || recording.load()) : true;
     const bool soloing = project->anySolo();
-    for (size_t i = 0; i < project->tracks.size(); ++i)
+
+    if (running)
     {
-        const auto& track = project->tracks[i];
+        for (int sample = 0; sample < numSamples; ++sample)
+        {
+            const double now = cursor;
+            const int whole = (int) std::floor(now);
+            float click = 0.0f;
+            if (withClick && project->metronome)
+            {
+                if (whole != lastWholeBeat)
+                {
+                    lastWholeBeat = whole;
+                    clickSamplesLeft = (int) (0.03 * rate);
+                    clickPhase = 0.0;
+                }
+                if (clickSamplesLeft > 0)
+                {
+                    const double freq = (whole % 4 == 0) ? 1760.0 : 1174.0;
+                    click = (float) (0.12 * std::sin(clickPhase));
+                    clickPhase += juce::MathConstants<double>::twoPi * freq / rate;
+                    --clickSamplesLeft;
+                }
+            }
+
+            if (recording.load() && recordWrite.load() < recordBuffer.getNumSamples())
+            {
+                const int index = recordWrite.load();
+                recordBuffer.setSample(0, index, input != nullptr ? input[sample] : 0.0f);
+                recordWrite.store(index + 1);
+            }
+
+            for (int trackIndex = 0; trackIndex < trackCount; ++trackIndex)
+            {
+                const auto& track = project->tracks[(size_t) trackIndex];
+                if (track.mute || (soloing && !track.solo))
+                    continue;
+
+                float mixed = 0.0f;
+                for (const auto& clip : track.clips)
+                {
+                    if (now < clip.startBeat || now >= clip.startBeat + clip.lengthBeats)
+                        continue;
+                    if (clip.audio != nullptr && clip.audio->getNumSamples() > 1)
+                    {
+                        const double seconds = (now - clip.startBeat) * 60.0 / tempo;
+                        const double position = seconds * clip.sampleRate;
+                        const int index = (int) position;
+                        if (index >= 0 && index + 1 < clip.audio->getNumSamples())
+                        {
+                            const float fraction = (float) (position - index);
+                            const float a = clip.audio->getSample(0, index);
+                            const float b = clip.audio->getSample(0, index + 1);
+                            mixed += a + (b - a) * fraction;
+                        }
+                    }
+                    else
+                    {
+                        const double freq = 110.0 * std::pow(2.0, trackIndex / 12.0);
+                        const double phase = std::fmod(now, 1.0) * juce::MathConstants<double>::twoPi * (freq / (tempo / 60.0));
+                        mixed += (float) (std::sin(phase) * 0.15);
+                    }
+                }
+
+                if (plugins[(size_t) trackIndex] == nullptr)
+                {
+                    for (const auto& note : track.notes)
+                    {
+                        if (now < note.startBeat || now >= note.startBeat + note.lengthBeats)
+                            continue;
+                        const int midiNote = juce::jlimit(0, 127, note.note);
+                        const double freq = 440.0 * std::pow(2.0, (midiNote - 69) / 12.0);
+                        float& phase = phases[(size_t) trackIndex * 128 + (size_t) midiNote];
+                        mixed += (float) (std::sin(phase) * 0.15 * note.velocity);
+                        phase += (float) (juce::MathConstants<double>::twoPi * freq / rate);
+                        if (phase > juce::MathConstants<float>::twoPi)
+                            phase -= juce::MathConstants<float>::twoPi;
+                    }
+                }
+
+                auto& low = lowFilters[(size_t) trackIndex];
+                auto& mid = midFilters[(size_t) trackIndex];
+                auto& high = highFilters[(size_t) trackIndex];
+                low.coefficients = std::abs(track.lowDb) < 0.05f
+                    ? new juce::dsp::IIR::Coefficients<float>(1, 0, 0, 1, 0, 0)
+                    : juce::dsp::IIR::Coefficients<float>::makeLowShelf(rate, 120.0f, 0.707f, juce::Decibels::decibelsToGain(track.lowDb));
+                mid.coefficients = std::abs(track.midDb) < 0.05f
+                    ? new juce::dsp::IIR::Coefficients<float>(1, 0, 0, 1, 0, 0)
+                    : juce::dsp::IIR::Coefficients<float>::makePeakFilter(rate, 1000.0f, 0.707f, juce::Decibels::decibelsToGain(track.midDb));
+                high.coefficients = std::abs(track.highDb) < 0.05f
+                    ? new juce::dsp::IIR::Coefficients<float>(1, 0, 0, 1, 0, 0)
+                    : juce::dsp::IIR::Coefficients<float>::makeHighShelf(rate, 8000.0f, 0.707f, juce::Decibels::decibelsToGain(track.highDb));
+                mixed = low.processSample(mixed);
+                mixed = mid.processSample(mixed);
+                mixed = high.processSample(mixed);
+
+                const float threshold = juce::jlimit(0.05f, 1.0f, track.compThreshold);
+                const float ratio = juce::jmax(1.0f, track.compRatio);
+                float& envelope = compEnv[(size_t) trackIndex];
+                const float level = std::abs(mixed);
+                envelope = level > envelope ? level : envelope * 0.9995f;
+                if (ratio > 1.01f && envelope > threshold)
+                    mixed *= std::pow(threshold / envelope, 1.0f - 1.0f / ratio);
+
+                trackAudio.setSample(trackIndex, sample, mixed);
+                for (int channel = 0; channel < numOutputs; ++channel)
+                    outputs[channel][sample] += click;
+            }
+
+            cursor += beatsPerSample;
+            if (allowLoop && project->loopEnabled && cursor >= project->loopEnd)
+                cursor = project->loopStart;
+        }
+    }
+
+    const double blockStart = beat.load();
+    for (int trackIndex = 0; trackIndex < trackCount; ++trackIndex)
+    {
+        auto& track = project->tracks[(size_t) trackIndex];
         if (track.mute || (soloing && !track.solo))
             continue;
 
-        for (const auto& clip : track.clips)
+        auto* plugin = plugins[(size_t) trackIndex].get();
+        if (plugin != nullptr)
         {
-            if (now < clip.startBeat || now >= clip.startBeat + clip.lengthBeats)
-                continue;
+            const int channels = juce::jmax(2, plugin->getTotalNumInputChannels(), plugin->getTotalNumOutputChannels());
+            if (pluginBuffer.getNumChannels() < channels || pluginBuffer.getNumSamples() < numSamples)
+                pluginBuffer.setSize(channels, numSamples, false, false, true);
+            pluginBuffer.clear();
+            for (int channel = 0; channel < channels; ++channel)
+                pluginBuffer.copyFrom(channel, 0, trackAudio, trackIndex, 0, numSamples);
 
-            if (clip.audio != nullptr && clip.audio->getNumSamples() > 1)
+            juce::MidiBuffer midi;
+            for (const auto& note : track.notes)
             {
-                const double seconds = (now - clip.startBeat) * 60.0 / bpm.load();
-                const double position = seconds * clip.sampleRate;
-                const int index = (int) position;
-                if (index >= 0 && index + 1 < clip.audio->getNumSamples())
-                {
-                    const float fraction = (float) (position - index);
-                    const float a = clip.audio->getSample(0, index);
-                    const float b = clip.audio->getSample(0, index + 1);
-                    sample += (a + (b - a) * fraction) * track.volume;
-                }
+                const double startSample = (note.startBeat - blockStart) / beatsPerSample;
+                const double endSample = (note.startBeat + note.lengthBeats - blockStart) / beatsPerSample;
+                if (startSample >= 0.0 && startSample < numSamples)
+                    midi.addEvent(juce::MidiMessage::noteOn(1, note.note, note.velocity), (int) startSample);
+                if (endSample >= 0.0 && endSample < numSamples)
+                    midi.addEvent(juce::MidiMessage::noteOff(1, note.note), (int) endSample);
             }
-            else
-            {
-                const double freq = 110.0 * std::pow(2.0, (double) i / 12.0);
-                const double phase = std::fmod(now, 1.0) * juce::MathConstants<double>::twoPi * (freq / (bpm.load() / 60.0));
-                sample += (float) (std::sin(phase) * 0.06 * track.volume);
-            }
+            plugin->processBlock(pluginBuffer, midi);
+            const int outChannel = plugin->getTotalNumOutputChannels() > 0 ? 0 : 0;
+            trackAudio.copyFrom(trackIndex, 0, pluginBuffer, juce::jmin(outChannel, pluginBuffer.getNumChannels() - 1), 0, numSamples);
+        }
+
+        const float angle = (track.pan + 1.0f) * 0.5f * juce::MathConstants<float>::halfPi;
+        const float leftGain = std::cos(angle) * track.volume;
+        const float rightGain = std::sin(angle) * track.volume;
+        for (int sample = 0; sample < numSamples; ++sample)
+        {
+            const float value = trackAudio.getSample(trackIndex, sample);
+            if (numOutputs > 0)
+                outputs[0][sample] += value * leftGain;
+            if (numOutputs > 1)
+                outputs[1][sample] += value * rightGain;
+            else if (numOutputs == 1)
+                outputs[0][sample] += value * 0.5f * (leftGain + rightGain);
         }
     }
 
-    beat.store(now + beatsPerSample);
-    return juce::jlimit(-1.0f, 1.0f, sample);
+    for (int channel = 0; channel < numOutputs; ++channel)
+        juce::FloatVectorOperations::clip(outputs[channel], outputs[channel], -1.0f, 1.0f, numSamples);
+
+    if (live && running)
+        beat.store(cursor);
 }
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData, int numInputChannels,
                                                    float* const* outputChannelData, int numOutputChannels,
                                                    int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
-    for (int i = 0; i < numSamples; ++i)
+    juce::ScopedLock sl(lock);
+    const float* input = (numInputChannels > 0 && inputChannelData != nullptr) ? inputChannelData[0] : nullptr;
+    renderUnlocked(input, outputChannelData, numOutputChannels, numSamples, true, true, true);
+}
+
+juce::Result AudioEngine::exportWav(const juce::File& file)
+{
+    juce::ScopedLock sl(lock);
+    if (project == nullptr)
+        return juce::Result::fail("No project");
+
+    const double rate = sampleRate > 1000.0 ? sampleRate : 44100.0;
+    const double endBeat = juce::jmax(1.0, project->getEndBeat());
+    const int total = juce::jlimit(1, (int) (rate * 60.0 * 20.0), (int) ((endBeat * 60.0 / bpm.load()) * rate));
+    juce::AudioBuffer<float> rendered(2, total);
+
+    const double savedBeat = beat.load();
+    const bool savedPlaying = playing.load();
+    const bool savedRecording = recording.load();
+    recording.store(false);
+    playing.store(true);
+    beat.store(0.0);
+    lastWholeBeat = -1;
+
+    int done = 0;
+    while (done < total)
     {
-        const float input = (numInputChannels > 0 && inputChannelData[0] != nullptr) ? inputChannelData[0][i] : 0.0f;
-        const float value = renderSample(input);
-        for (int channel = 0; channel < numOutputChannels; ++channel)
-            outputChannelData[channel][i] = value;
+        const int count = juce::jmin(256, total - done);
+        float* channels[] = { rendered.getWritePointer(0, done), rendered.getWritePointer(1, done) };
+        renderUnlocked(nullptr, channels, 2, count, true, false, false);
+        done += count;
     }
+
+    beat.store(savedBeat);
+    playing.store(savedPlaying);
+    recording.store(savedRecording);
+
+    file.deleteFile();
+    auto stream = std::unique_ptr<juce::FileOutputStream>(file.createOutputStream());
+    if (stream == nullptr)
+        return juce::Result::fail("Could not create the WAV file");
+    juce::WavAudioFormat format;
+    juce::StringPairArray meta;
+    std::unique_ptr<juce::AudioFormatWriter> writer(format.createWriterFor(stream.release(), rate, 2, 16, meta, 0));
+    if (writer == nullptr || !writer->writeFromAudioSampleBuffer(rendered, 0, rendered.getNumSamples()))
+        return juce::Result::fail("Could not write the WAV file");
+    return juce::Result::ok();
 }
