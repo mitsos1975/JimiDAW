@@ -151,6 +151,21 @@ juce::AudioPluginInstance* AudioEngine::getPlugin(int trackIndex)
     return plugins[(size_t) trackIndex].get();
 }
 
+float AudioEngine::getTrackPeak(int trackIndex) const
+{
+    if (trackIndex < 0 || trackIndex >= 64)
+        return 0.0f;
+    return trackPeaks[trackIndex].load();
+}
+
+void AudioEngine::rememberPeak(int trackIndex, float peak)
+{
+    if (trackIndex < 0 || trackIndex >= 64)
+        return;
+    const float previous = trackPeaks[trackIndex].load();
+    trackPeaks[trackIndex].store(juce::jmax(peak, previous * 0.86f));
+}
+
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
     juce::ScopedLock sl(lock);
@@ -320,7 +335,10 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
         {
             auto& track = project->tracks[(size_t) trackIndex];
             if (track.mute || (soloing && !track.solo))
+            {
+                rememberPeak(trackIndex, 0.0f);
                 continue;
+            }
 
             auto* plugin = plugins[(size_t) trackIndex].get();
             if (plugin != nullptr)
@@ -349,9 +367,11 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
             const float angle = (track.pan + 1.0f) * 0.5f * juce::MathConstants<float>::halfPi;
             const float leftGain = std::cos(angle) * track.volume;
             const float rightGain = std::sin(angle) * track.volume;
+            float trackPeak = 0.0f;
             for (int sample = 0; sample < numSamples; ++sample)
             {
                 const float value = trackAudio.getSample(trackIndex, sample);
+                trackPeak = juce::jmax(trackPeak, std::abs(value));
                 if (numOutputs > 0)
                     outputs[0][sample] += value * leftGain;
                 if (numOutputs > 1)
@@ -359,10 +379,17 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
                 else if (numOutputs == 1)
                     outputs[0][sample] += value * 0.5f * (leftGain + rightGain);
             }
+            rememberPeak(trackIndex, trackPeak);
         }
         if (live)
             beat.store(cursor);
     }
+
+    float busPeak = 0.0f;
+    for (int channel = 0; channel < numOutputs; ++channel)
+        if (outputs[channel] != nullptr)
+            busPeak = juce::jmax(busPeak, juce::FloatVectorOperations::findMaximum(outputs[channel], numSamples));
+    masterPeak.store(juce::jmax(busPeak, masterPeak.load() * 0.86f));
 
     for (int channel = 0; channel < numOutputs; ++channel)
         if (outputs[channel] != nullptr)
