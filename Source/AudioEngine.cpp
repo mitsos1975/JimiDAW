@@ -1,5 +1,15 @@
 #include "AudioEngine.h"
 
+namespace
+{
+juce::dsp::IIR::Coefficients<float>::Ptr shelfOrPass(bool engaged, const juce::dsp::IIR::Coefficients<float>::Ptr& engagedCoeffs)
+{
+    if (!engaged)
+        return new juce::dsp::IIR::Coefficients<float>(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+    return engagedCoeffs;
+}
+}
+
 AudioEngine::AudioEngine()
 {
     formatManager.addFormat(new juce::VST3PluginFormat());
@@ -192,6 +202,17 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
 
     if (running)
     {
+        for (int trackIndex = 0; trackIndex < trackCount; ++trackIndex)
+        {
+            const auto& track = project->tracks[(size_t) trackIndex];
+            lowFilters[(size_t) trackIndex].coefficients = shelfOrPass(std::abs(track.lowDb) >= 0.05f,
+                juce::dsp::IIR::Coefficients<float>::makeLowShelf(rate, 120.0f, 0.707f, juce::Decibels::decibelsToGain(track.lowDb)));
+            midFilters[(size_t) trackIndex].coefficients = shelfOrPass(std::abs(track.midDb) >= 0.05f,
+                juce::dsp::IIR::Coefficients<float>::makePeakFilter(rate, 1000.0f, 0.707f, juce::Decibels::decibelsToGain(track.midDb)));
+            highFilters[(size_t) trackIndex].coefficients = shelfOrPass(std::abs(track.highDb) >= 0.05f,
+                juce::dsp::IIR::Coefficients<float>::makeHighShelf(rate, 8000.0f, 0.707f, juce::Decibels::decibelsToGain(track.highDb)));
+        }
+
         for (int sample = 0; sample < numSamples; ++sample)
         {
             const double now = cursor;
@@ -213,6 +234,8 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
                     --clickSamplesLeft;
                 }
             }
+            for (int channel = 0; channel < numOutputs; ++channel)
+                outputs[channel][sample] += click;
 
             if (recording.load() && recordWrite.load() < recordBuffer.getNumSamples())
             {
@@ -269,21 +292,9 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
                     }
                 }
 
-                auto& low = lowFilters[(size_t) trackIndex];
-                auto& mid = midFilters[(size_t) trackIndex];
-                auto& high = highFilters[(size_t) trackIndex];
-                low.coefficients = std::abs(track.lowDb) < 0.05f
-                    ? new juce::dsp::IIR::Coefficients<float>(1, 0, 0, 1, 0, 0)
-                    : juce::dsp::IIR::Coefficients<float>::makeLowShelf(rate, 120.0f, 0.707f, juce::Decibels::decibelsToGain(track.lowDb));
-                mid.coefficients = std::abs(track.midDb) < 0.05f
-                    ? new juce::dsp::IIR::Coefficients<float>(1, 0, 0, 1, 0, 0)
-                    : juce::dsp::IIR::Coefficients<float>::makePeakFilter(rate, 1000.0f, 0.707f, juce::Decibels::decibelsToGain(track.midDb));
-                high.coefficients = std::abs(track.highDb) < 0.05f
-                    ? new juce::dsp::IIR::Coefficients<float>(1, 0, 0, 1, 0, 0)
-                    : juce::dsp::IIR::Coefficients<float>::makeHighShelf(rate, 8000.0f, 0.707f, juce::Decibels::decibelsToGain(track.highDb));
-                mixed = low.processSample(mixed);
-                mixed = mid.processSample(mixed);
-                mixed = high.processSample(mixed);
+                mixed = lowFilters[(size_t) trackIndex].processSample(mixed);
+                mixed = midFilters[(size_t) trackIndex].processSample(mixed);
+                mixed = highFilters[(size_t) trackIndex].processSample(mixed);
 
                 const float threshold = juce::jlimit(0.05f, 1.0f, track.compThreshold);
                 const float ratio = juce::jmax(1.0f, track.compRatio);
@@ -294,8 +305,6 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
                     mixed *= std::pow(threshold / envelope, 1.0f - 1.0f / ratio);
 
                 trackAudio.setSample(trackIndex, sample, mixed);
-                for (int channel = 0; channel < numOutputs; ++channel)
-                    outputs[channel][sample] += click;
             }
 
             cursor += beatsPerSample;
@@ -304,58 +313,60 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
         }
     }
 
-    const double blockStart = beat.load();
-    for (int trackIndex = 0; trackIndex < trackCount; ++trackIndex)
+    if (running)
     {
-        auto& track = project->tracks[(size_t) trackIndex];
-        if (track.mute || (soloing && !track.solo))
-            continue;
-
-        auto* plugin = plugins[(size_t) trackIndex].get();
-        if (plugin != nullptr)
+        const double blockStart = beat.load();
+        for (int trackIndex = 0; trackIndex < trackCount; ++trackIndex)
         {
-            const int channels = juce::jmax(2, plugin->getTotalNumInputChannels(), plugin->getTotalNumOutputChannels());
-            if (pluginBuffer.getNumChannels() < channels || pluginBuffer.getNumSamples() < numSamples)
-                pluginBuffer.setSize(channels, numSamples, false, false, true);
-            pluginBuffer.clear();
-            for (int channel = 0; channel < channels; ++channel)
-                pluginBuffer.copyFrom(channel, 0, trackAudio, trackIndex, 0, numSamples);
+            auto& track = project->tracks[(size_t) trackIndex];
+            if (track.mute || (soloing && !track.solo))
+                continue;
 
-            juce::MidiBuffer midi;
-            for (const auto& note : track.notes)
+            auto* plugin = plugins[(size_t) trackIndex].get();
+            if (plugin != nullptr)
             {
-                const double startSample = (note.startBeat - blockStart) / beatsPerSample;
-                const double endSample = (note.startBeat + note.lengthBeats - blockStart) / beatsPerSample;
-                if (startSample >= 0.0 && startSample < numSamples)
-                    midi.addEvent(juce::MidiMessage::noteOn(1, note.note, note.velocity), (int) startSample);
-                if (endSample >= 0.0 && endSample < numSamples)
-                    midi.addEvent(juce::MidiMessage::noteOff(1, note.note), (int) endSample);
-            }
-            plugin->processBlock(pluginBuffer, midi);
-            const int outChannel = plugin->getTotalNumOutputChannels() > 0 ? 0 : 0;
-            trackAudio.copyFrom(trackIndex, 0, pluginBuffer, juce::jmin(outChannel, pluginBuffer.getNumChannels() - 1), 0, numSamples);
-        }
+                const int channels = juce::jmax(2, plugin->getTotalNumInputChannels(), plugin->getTotalNumOutputChannels());
+                if (pluginBuffer.getNumChannels() < channels || pluginBuffer.getNumSamples() < numSamples)
+                    pluginBuffer.setSize(channels, numSamples, false, false, true);
+                pluginBuffer.clear();
+                for (int channel = 0; channel < channels; ++channel)
+                    pluginBuffer.copyFrom(channel, 0, trackAudio, trackIndex, 0, numSamples);
 
-        const float angle = (track.pan + 1.0f) * 0.5f * juce::MathConstants<float>::halfPi;
-        const float leftGain = std::cos(angle) * track.volume;
-        const float rightGain = std::sin(angle) * track.volume;
-        for (int sample = 0; sample < numSamples; ++sample)
-        {
-            const float value = trackAudio.getSample(trackIndex, sample);
-            if (numOutputs > 0)
-                outputs[0][sample] += value * leftGain;
-            if (numOutputs > 1)
-                outputs[1][sample] += value * rightGain;
-            else if (numOutputs == 1)
-                outputs[0][sample] += value * 0.5f * (leftGain + rightGain);
+                juce::MidiBuffer midi;
+                for (const auto& note : track.notes)
+                {
+                    const double startSample = (note.startBeat - blockStart) / beatsPerSample;
+                    const double endSample = (note.startBeat + note.lengthBeats - blockStart) / beatsPerSample;
+                    if (startSample >= 0.0 && startSample < numSamples)
+                        midi.addEvent(juce::MidiMessage::noteOn(1, note.note, note.velocity), (int) startSample);
+                    if (endSample >= 0.0 && endSample < numSamples)
+                        midi.addEvent(juce::MidiMessage::noteOff(1, note.note), (int) endSample);
+                }
+                plugin->processBlock(pluginBuffer, midi);
+                trackAudio.copyFrom(trackIndex, 0, pluginBuffer, 0, 0, numSamples);
+            }
+
+            const float angle = (track.pan + 1.0f) * 0.5f * juce::MathConstants<float>::halfPi;
+            const float leftGain = std::cos(angle) * track.volume;
+            const float rightGain = std::sin(angle) * track.volume;
+            for (int sample = 0; sample < numSamples; ++sample)
+            {
+                const float value = trackAudio.getSample(trackIndex, sample);
+                if (numOutputs > 0)
+                    outputs[0][sample] += value * leftGain;
+                if (numOutputs > 1)
+                    outputs[1][sample] += value * rightGain;
+                else if (numOutputs == 1)
+                    outputs[0][sample] += value * 0.5f * (leftGain + rightGain);
+            }
         }
+        if (live)
+            beat.store(cursor);
     }
 
     for (int channel = 0; channel < numOutputs; ++channel)
-        juce::FloatVectorOperations::clip(outputs[channel], outputs[channel], -1.0f, 1.0f, numSamples);
-
-    if (live && running)
-        beat.store(cursor);
+        if (outputs[channel] != nullptr)
+            juce::FloatVectorOperations::clip(outputs[channel], outputs[channel], -1.0f, 1.0f, numSamples);
 }
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData, int numInputChannels,
