@@ -8,32 +8,51 @@ void TrackList::setProject(Project* newProject)
 
 void TrackList::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff1c1f22));
-    g.setColour(juce::Colour(0xff9aa0a6));
-    g.setFont(12.0f);
-    g.drawText("Tracks", 8, 0, getWidth() - 16, header, juce::Justification::centredLeft);
+    g.fillAll(juce::Colour(0xff181818));
+    g.setColour(juce::Colour(0xff8a8a8a));
+    g.setFont(juce::FontOptions(11.0f));
+    g.drawText("TRACKS", 10, 0, getWidth() - 16, header, juce::Justification::centredLeft);
+    g.setColour(juce::Colour(0xff0c0c0c));
+    g.drawLine(0.0f, (float) header - 1.0f, (float) getWidth(), (float) header - 1.0f);
     if (project == nullptr)
         return;
 
     for (size_t i = 0; i < project->tracks.size(); ++i)
     {
         auto row = juce::Rectangle<int>(0, header + (int) i * rowHeight, getWidth(), rowHeight);
-        g.setColour(project->selectedTrack == (int) i ? juce::Colour(0xff2c333a) : (i % 2 == 0 ? juce::Colour(0xff22262a) : juce::Colour(0xff1a1d20)));
+        const bool selected = project->selectedTrack == (int) i;
+        g.setColour(selected ? juce::Colour(0xff2a3138) : juce::Colour(i % 2 == 0 ? 0xff1c1c1c : 0xff161616));
         g.fillRect(row);
-        g.setColour(project->tracks[i].colour);
-        g.fillRect(row.removeFromLeft(4));
+        const auto tone = project->tracks[i].colour.withSaturation(0.45f).withBrightness(0.62f);
+        g.setColour(tone);
+        g.fillRect(row.removeFromLeft(3));
+        if (selected)
+        {
+            g.setColour(juce::Colour(0xffd0d0d0).withAlpha(0.35f));
+            g.drawRect(0, header + (int) i * rowHeight, getWidth(), rowHeight);
+        }
+
         auto text = row.reduced(8, 6);
-        g.setColour(juce::Colour(0xffe8eaed));
-        g.setFont(14.0f);
+        g.setColour(juce::Colour(0xffe6e6e6));
+        g.setFont(juce::FontOptions(13.0f));
         g.drawText(project->tracks[i].name, text.removeFromTop(20), juce::Justification::centredLeft);
+
         auto buttons = text.removeFromTop(18);
-        g.setFont(12.0f);
-        g.setColour(project->tracks[i].mute ? juce::Colour(0xffe85d75) : juce::Colour(0xff9aa0a6));
-        g.drawText(project->tracks[i].mute ? "M" : "m", buttons.removeFromLeft(22), juce::Justification::centred);
-        g.setColour(project->tracks[i].solo ? juce::Colour(0xfff0a202) : juce::Colour(0xff9aa0a6));
-        g.drawText(project->tracks[i].solo ? "S" : "s", buttons.removeFromLeft(22), juce::Justification::centred);
-        g.setColour(project->tracks[i].armed ? juce::Colour(0xffff4d4d) : juce::Colour(0xff9aa0a6));
-        g.drawText(project->tracks[i].armed ? "R" : "r", buttons.removeFromLeft(22), juce::Justification::centred);
+        auto drawKey = [&](juce::Rectangle<int> box, const juce::String& letter, bool active, juce::Colour activeColour)
+        {
+            g.setColour(active ? activeColour : juce::Colour(0xff2a2a2a));
+            g.fillRect(box);
+            g.setColour(juce::Colour(0xff111111));
+            g.drawRect(box);
+            g.setColour(active ? juce::Colour(0xfff4f4f4) : juce::Colour(0xff8d8d8d));
+            g.setFont(juce::FontOptions(11.0f));
+            g.drawText(letter, box, juce::Justification::centred);
+        };
+        drawKey(buttons.removeFromLeft(20), "M", project->tracks[i].mute, juce::Colour(0xff8a3038));
+        buttons.removeFromLeft(4);
+        drawKey(buttons.removeFromLeft(20), "S", project->tracks[i].solo, juce::Colour(0xff8a7030));
+        buttons.removeFromLeft(4);
+        drawKey(buttons.removeFromLeft(20), "R", project->tracks[i].armed, juce::Colour(0xff8a3030));
     }
 }
 
@@ -54,9 +73,9 @@ void TrackList::mouseDown(const juce::MouseEvent& event)
         {
             if (x < 70)
                 track.mute = !track.mute;
-            else if (x < 92)
+            else if (x < 94)
                 track.solo = !track.solo;
-            else if (x < 114)
+            else if (x < 118)
             {
                 for (auto& other : project->tracks)
                     other.armed = false;

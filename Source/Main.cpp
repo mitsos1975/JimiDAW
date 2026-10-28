@@ -5,7 +5,7 @@ class JimiDawApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "JimiDAW"; }
-    const juce::String getApplicationVersion() override { return "0.1.0"; }
+    const juce::String getApplicationVersion() override { return "0.4.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise(const juce::String&) override
@@ -20,12 +20,12 @@ public:
     {
     public:
         explicit MainWindow(juce::String name)
-            : DocumentWindow(name, juce::Colour(0xff1a1c1e), DocumentWindow::allButtons)
+            : DocumentWindow(name, juce::Colour(0xff141414), DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar(true);
             setContentOwned(new MainComponent(), true);
             setResizable(true, true);
-            centreWithSize(1440, 900);
+            centreWithSize(1480, 940);
             setVisible(true);
         }
 
