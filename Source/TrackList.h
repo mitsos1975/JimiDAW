@@ -6,6 +6,7 @@ class TrackList : public juce::Component
 {
 public:
     std::function<void()> onChanged;
+    juce::CriticalSection* lock = nullptr;
 
     void setProject(Project* newProject);
     void paint(juce::Graphics&) override;
