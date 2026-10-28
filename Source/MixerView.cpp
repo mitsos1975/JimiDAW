@@ -6,14 +6,40 @@ void MixerView::setProject(Project* newProject)
     rebuild();
 }
 
+void MixerView::setLevels(const float* peaks, int count, float master)
+{
+    const int n = juce::jmin(count, 64);
+    for (int i = 0; i < 64; ++i)
+        levels[i] = i < n && peaks != nullptr ? peaks[i] : 0.0f;
+    masterLevel = master;
+    repaint();
+}
+
 void MixerView::rebuild()
 {
     faders.clear();
+    pans.clear();
     if (project == nullptr)
         return;
 
     for (size_t i = 0; i < project->tracks.size(); ++i)
     {
+        auto* pan = pans.add(new juce::Slider());
+        pan->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        pan->setRange(-1.0, 1.0, 0.01);
+        pan->setValue(project->tracks[i].pan, juce::dontSendNotification);
+        pan->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        pan->onValueChange = [this, i, pan]
+        {
+            if (project != nullptr && i < project->tracks.size())
+            {
+                project->tracks[i].pan = (float) pan->getValue();
+                if (onChanged)
+                    onChanged();
+            }
+        };
+        addAndMakeVisible(pan);
+
         auto* slider = faders.add(new juce::Slider());
         slider->setSliderStyle(juce::Slider::LinearVertical);
         slider->setRange(0.0, 1.0, 0.001);
@@ -33,72 +59,88 @@ void MixerView::rebuild()
     resized();
 }
 
+void MixerView::paintMeter(juce::Graphics& g, juce::Rectangle<int> area, float level) const
+{
+    g.setColour(juce::Colour(0xff070707));
+    g.fillRect(area);
+    const float clamped = juce::jlimit(0.0f, 1.0f, level);
+    const int filled = (int) (area.getHeight() * clamped);
+    auto lit = area.removeFromBottom(filled);
+    for (int y = lit.getY(); y < lit.getBottom(); ++y)
+    {
+        const float t = 1.0f - (float) (y - lit.getY()) / (float) juce::jmax(1, lit.getHeight());
+        const float dbPosition = clamped * t;
+        juce::Colour colour = dbPosition > 0.92f ? juce::Colour(0xffd24a4a)
+                            : dbPosition > 0.75f ? juce::Colour(0xffd2b14a)
+                                                 : juce::Colour(0xff7dcea0);
+        g.setColour(colour);
+        g.fillRect(area.getX(), y, area.getWidth(), 1);
+    }
+}
+
 void MixerView::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff1a1a1a));
-    g.setColour(juce::Colour(0xff0a0a0a));
-    g.fillRect(0, 0, getWidth(), 1);
-
+    g.fillAll(juce::Colour(0xff161616));
     if (project == nullptr)
         return;
 
+    const int columns = (int) project->tracks.size() + 1;
     g.setFont(juce::FontOptions(11.0f));
-    for (size_t i = 0; i < project->tracks.size(); ++i)
+    for (int i = 0; i < columns; ++i)
     {
-        auto column = juce::Rectangle<int>((int) i * columnWidth, 0, columnWidth, getHeight()).reduced(3, 4);
+        const bool master = i == (int) project->tracks.size();
+        auto column = juce::Rectangle<int>(i * columnWidth, 0, columnWidth, getHeight()).reduced(3, 4);
         g.setColour(juce::Colour(0xff101010));
         g.fillRect(column);
-        g.setColour(juce::Colour(0xff2c2c2c));
+        g.setColour(juce::Colour(0xff2a2a2a));
         g.drawRect(column);
 
-        const auto tone = project->tracks[i].colour.withSaturation(0.42f).withBrightness(0.62f);
+        auto tone = master ? juce::Colour(0xffd0d0d0) : project->tracks[(size_t) i].colour.withSaturation(0.42f).withBrightness(0.62f);
         g.setColour(tone);
-        g.fillRect(column.removeFromTop(5));
+        g.fillRect(column.getX(), column.getY(), column.getWidth(), 4);
 
-        g.setColour(juce::Colour(0xffd8d8d8));
-        g.drawText(project->tracks[i].name, column.removeFromTop(18), juce::Justification::centred, true);
+        g.setColour(juce::Colour(0xffe4e4e4));
+        g.drawText(master ? "Master" : project->tracks[(size_t) i].name,
+                   column.getX(), column.getY() + 46, column.getWidth(), 16, juce::Justification::centred, true);
 
-        auto buttons = column.removeFromBottom(22).reduced(6, 2);
-        auto mute = buttons.removeFromLeft(buttons.getWidth() / 2).reduced(2, 0);
-        auto solo = buttons.reduced(2, 0);
-        g.setColour(project->tracks[i].mute ? juce::Colour(0xff8a3038) : juce::Colour(0xff2a2a2a));
-        g.fillRect(mute);
-        g.setColour(project->tracks[i].solo ? juce::Colour(0xff8a7030) : juce::Colour(0xff2a2a2a));
-        g.fillRect(solo);
-        g.setColour(juce::Colour(0xffe8e8e8));
-        g.drawText("M", mute, juce::Justification::centred);
-        g.drawText("S", solo, juce::Justification::centred);
-
-        g.setColour(juce::Colour(0xff6a6a6a));
-        g.setFont(juce::FontOptions(9.0f));
-        const int marks[] = { 6, 0, -6, -12, -24 };
-        for (int mark = 0; mark < 5; ++mark)
+        if (!master)
         {
-            const int y = 28 + mark * (getHeight() - 78) / 4;
-            g.drawText(juce::String(marks[mark]), column.getX(), y, 16, 10, juce::Justification::centredRight);
+            auto buttons = juce::Rectangle<int>(column.getX() + 8, column.getBottom() - 22, column.getWidth() - 16, 16);
+            auto mute = buttons.removeFromLeft(buttons.getWidth() / 2).reduced(2, 0);
+            auto solo = buttons.reduced(2, 0);
+            g.setColour(project->tracks[(size_t) i].mute ? juce::Colour(0xff8a3038) : juce::Colour(0xff2a2a2a));
+            g.fillRect(mute);
+            g.setColour(project->tracks[(size_t) i].solo ? juce::Colour(0xff8a7030) : juce::Colour(0xff2a2a2a));
+            g.fillRect(solo);
+            g.setColour(juce::Colour(0xfff0f0f0));
+            g.drawText("M", mute, juce::Justification::centred);
+            g.drawText("S", solo, juce::Justification::centred);
         }
+
+        paintMeter(g, juce::Rectangle<int>(column.getRight() - 16, column.getY() + 66, 8, column.getHeight() - 96),
+                   master ? masterLevel : levels[i]);
     }
 }
 
 void MixerView::resized()
 {
     for (int i = 0; i < faders.size(); ++i)
-        faders[i]->setBounds(i * columnWidth + 28, 28, 36, getHeight() - 58);
+    {
+        pans[i]->setBounds(i * columnWidth + 34, 8, 36, 36);
+        faders[i]->setBounds(i * columnWidth + 30, 66, 40, getHeight() - 96);
+    }
 }
 
 void MixerView::mouseDown(const juce::MouseEvent& event)
 {
-    if (project == nullptr)
+    if (project == nullptr || event.y < getHeight() - 26)
         return;
     const int index = event.x / columnWidth;
     if (index < 0 || index >= (int) project->tracks.size())
         return;
-    if (event.y < getHeight() - 26)
-        return;
 
     auto& track = project->tracks[(size_t) index];
-    const int local = event.x - index * columnWidth;
-    if (local < columnWidth / 2)
+    if ((event.x - index * columnWidth) < columnWidth / 2)
         track.mute = !track.mute;
     else
         track.solo = !track.solo;
