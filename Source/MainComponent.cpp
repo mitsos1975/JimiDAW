@@ -51,6 +51,7 @@ MainComponent::MainComponent()
     trackList.setProject(&project);
     arrangement.setProject(&project);
     mixer.setProject(&project);
+    mixer.setEngine(&engine);
     piano.setProject(&project);
     inspector.setProject(&project);
     transport.setBpm(project.bpm);
@@ -365,7 +366,7 @@ void MainComponent::resized()
     {
         piano.setVisible(false);
         mixer.setVisible(true);
-        mixer.setBounds(area.removeFromBottom(210));
+        mixer.setBounds(area.removeFromBottom(300));
     }
     trackList.setBounds(area.removeFromLeft(220));
     arrangement.setBounds(area);
