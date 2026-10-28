@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(JimiDAW VERSION 0.2.0 LANGUAGES C CXX)
+project(JimiDAW VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,6 +22,8 @@ juce_add_gui_app(JimiDAW
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
 )
+
+juce_generate_juce_header(JimiDAW)
 
 target_sources(JimiDAW PRIVATE
     Source/Main.cpp
