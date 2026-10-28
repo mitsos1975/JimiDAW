@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(JimiDAW VERSION 0.1.0 LANGUAGES C CXX)
+project(JimiDAW VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,11 +40,19 @@ target_sources(JimiDAW PRIVATE
     Source/AudioEngine.h
     Source/AudioEngine.cpp
     Source/Project.h
+    Source/Session.h
+    Source/Session.cpp
+    Source/PianoRoll.h
+    Source/PianoRoll.cpp
+    Source/Inspector.h
+    Source/Inspector.cpp
 )
 
 target_compile_definitions(JimiDAW PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_VST=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:JimiDAW,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:JimiDAW,JUCE_VERSION>"
@@ -59,6 +67,8 @@ endif()
 
 target_link_libraries(JimiDAW PRIVATE
     juce::juce_audio_utils
+    juce::juce_audio_processors
+    juce::juce_audio_formats
     juce::juce_audio_devices
     juce::juce_dsp
     juce::juce_recommended_config_flags
