@@ -1,0 +1,48 @@
+name: Windows release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Collect the program
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse build -Filter JimiDAW.exe | Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
+          if (-not $exe) { throw 'JimiDAW.exe was not produced' }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item $exe.FullName dist/JimiDAW.exe
+          Compress-Archive -Path dist/JimiDAW.exe -DestinationPath JimiDAW-Windows.zip -Force
+          Write-Host "Packed $($exe.FullName)"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.3.${{ github.run_number }}
+          name: JimiDAW 0.3.${{ github.run_number }} for Windows
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          body: |
+            Unzip JimiDAW-Windows.zip and run JimiDAW.exe.
+
+            This build uses WASAPI. Pick the input and output with the Audio button.
+            If Windows reports a missing DLL, install the Microsoft Visual C++ 2015-2022 redistributable (x64).
+
+            What this version does: play, record, import and export WAV, save and open a project, piano roll, EQ, compressor, pan, and one VST3 per track.
+          files: JimiDAW-Windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
