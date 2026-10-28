@@ -26,6 +26,8 @@ public:
     void clearPlugin(int trackIndex);
     juce::AudioPluginInstance* getPlugin(int trackIndex);
     juce::Result exportWav(const juce::File& file);
+    float getTrackPeak(int trackIndex) const;
+    float getMasterPeak() const { return masterPeak.load(); }
 
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
     void audioDeviceStopped() override;
@@ -40,6 +42,7 @@ private:
     void ensureDsp(int trackCount);
     void renderUnlocked(const float* input, float* const* outputs, int numOutputs, int numSamples,
                         bool live, bool withClick, bool allowLoop);
+    void rememberPeak(int trackIndex, float peak);
 
     juce::AudioDeviceManager deviceManager;
     juce::AudioPluginFormatManager formatManager;
@@ -50,6 +53,8 @@ private:
     std::atomic<double> beat { 0.0 };
     std::atomic<double> bpm { 120.0 };
     std::atomic<int> recordWrite { 0 };
+    std::atomic<float> trackPeaks[64] {};
+    std::atomic<float> masterPeak { 0.0f };
     double sampleRate = 44100.0;
     int blockSize = 512;
     double recordStartBeat = 0.0;
