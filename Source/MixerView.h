@@ -27,6 +27,7 @@ private:
     AudioEngine* engine = nullptr;
     juce::OwnedArray<juce::Slider> faders;
     juce::OwnedArray<juce::Slider> pans;
+    juce::OwnedArray<juce::Slider> sends;
     float levels[65] {};
     float masterLevel = 0.0f;
 };

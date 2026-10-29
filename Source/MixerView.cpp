@@ -36,12 +36,31 @@ void MixerView::rebuild()
 {
     faders.clear();
     pans.clear();
+    sends.clear();
     if (project == nullptr)
         return;
 
     for (size_t i = 0; i < project->tracks.size(); ++i)
     {
+        auto* send = sends.add(new juce::Slider());
+        send->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        send->setRange(0.0, 1.0, 0.01);
+        send->setValue(project->tracks[i].send, juce::dontSendNotification);
+        send->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        send->setTooltip("Send");
+        send->onValueChange = [this, i, send]
+        {
+            if (project != nullptr && i < project->tracks.size())
+            {
+                project->tracks[i].send = (float) send->getValue();
+                if (onChanged)
+                    onChanged();
+            }
+        };
+        addAndMakeVisible(send);
+
         auto* pan = pans.add(new juce::Slider());
+        pan->setTooltip("Pan");
         pan->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         pan->setRange(-1.0, 1.0, 0.01);
         pan->setValue(project->tracks[i].pan, juce::dontSendNotification);
@@ -144,7 +163,8 @@ void MixerView::resized()
 {
     for (int i = 0; i < faders.size(); ++i)
     {
-        pans[i]->setBounds(i * columnWidth + 34, 8, 36, 36);
+        sends[i]->setBounds(i * columnWidth + 8, 6, 34, 34);
+        pans[i]->setBounds(i * columnWidth + 44, 6, 34, 34);
         faders[i]->setBounds(i * columnWidth + 30, 66, 40, getHeight() - 96);
     }
 }

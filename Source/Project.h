@@ -3,6 +3,12 @@
 #include <memory>
 #include <vector>
 
+struct Marker
+{
+    double beat = 0.0;
+    juce::String name { "M" };
+};
+
 struct AutomationPoint
 {
     double beat = 0.0;
@@ -33,6 +39,7 @@ struct Track
     juce::Colour colour { juce::Colour(0xff3d8bfd) };
     float volume = 0.8f;
     float pan = 0.0f;
+    float send = 0.0f;
     bool mute = false;
     bool solo = false;
     bool armed = false;
@@ -80,6 +87,7 @@ struct Project
     double loopStart = 0.0;
     double loopEnd = 8.0;
     std::vector<Track> tracks;
+    std::vector<Marker> markers;
 
     static Track makeTrack(int index)
     {
@@ -112,6 +120,7 @@ struct Project
             }
             if (i == 1)
             {
+                track.send = 0.55f;
                 track.notes.push_back({ 0.0, 1.0, 60, 0.8f });
                 track.notes.push_back({ 1.0, 1.0, 64, 0.8f });
                 track.notes.push_back({ 2.0, 1.0, 67, 0.8f });
@@ -119,6 +128,8 @@ struct Project
             }
             project.tracks.push_back(std::move(track));
         }
+        project.markers.push_back({ 0.0, "Start" });
+        project.markers.push_back({ 8.0, "B" });
         return project;
     }
 

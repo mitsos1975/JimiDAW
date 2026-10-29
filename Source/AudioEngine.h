@@ -64,6 +64,11 @@ private:
     juce::AudioBuffer<float> recordBuffer;
     juce::AudioBuffer<float> trackAudio;
     juce::AudioBuffer<float> pluginBuffer;
+    juce::AudioBuffer<float> sendBus;
+    std::vector<float> delayL;
+    std::vector<float> delayR;
+    int delayPosL = 0;
+    int delayPosR = 0;
     std::vector<juce::dsp::IIR::Filter<float>> lowFilters;
     std::vector<juce::dsp::IIR::Filter<float>> midFilters;
     std::vector<juce::dsp::IIR::Filter<float>> highFilters;

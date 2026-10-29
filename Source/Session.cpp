@@ -59,6 +59,7 @@ juce::Result Session::save(const Project& project, const juce::File& file)
         obj->setProperty("colour", track.colour.toDisplayString(true));
         obj->setProperty("volume", track.volume);
         obj->setProperty("pan", track.pan);
+        obj->setProperty("send", track.send);
         obj->setProperty("mute", track.mute);
         obj->setProperty("solo", track.solo);
         obj->setProperty("armed", track.armed);
@@ -113,6 +114,15 @@ juce::Result Session::save(const Project& project, const juce::File& file)
         obj->setProperty("volumeAutomation", automation);
         tracks.add(juce::var(obj));
     }
+    juce::Array<juce::var> markers;
+    for (const auto& marker : project.markers)
+    {
+        auto* markerObj = new juce::DynamicObject();
+        markerObj->setProperty("beat", marker.beat);
+        markerObj->setProperty("name", marker.name);
+        markers.add(juce::var(markerObj));
+    }
+    root->setProperty("markers", markers);
     root->setProperty("tracks", tracks);
 
     if (!file.replaceWithText(juce::JSON::toString(juce::var(root), true)))
@@ -138,6 +148,21 @@ juce::Result Session::load(Project& project, const juce::File& file)
     if (loaded.loopEnd <= loaded.loopStart)
         loaded.loopEnd = loaded.loopStart + 8.0;
     loaded.metronome = root->hasProperty("metronome") ? (bool) root->getProperty("metronome") : true;
+    if (auto* markers = root->getProperty("markers").getArray())
+    {
+        for (const auto& markerVar : *markers)
+        {
+            auto* markerObj = markerVar.getDynamicObject();
+            if (markerObj == nullptr)
+                continue;
+            Marker marker;
+            marker.beat = (double) markerObj->getProperty("beat");
+            marker.name = markerObj->getProperty("name").toString();
+            if (marker.name.isEmpty())
+                marker.name = "M";
+            loaded.markers.push_back(marker);
+        }
+    }
 
     auto tracksVar = root->getProperty("tracks");
     if (auto* tracks = tracksVar.getArray())
@@ -152,6 +177,7 @@ juce::Result Session::load(Project& project, const juce::File& file)
             track.colour = juce::Colour::fromString(obj->getProperty("colour").toString());
             track.volume = (float) (double) obj->getProperty("volume");
             track.pan = (float) (double) obj->getProperty("pan");
+            track.send = obj->hasProperty("send") ? (float) (double) obj->getProperty("send") : 0.0f;
             track.mute = (bool) obj->getProperty("mute");
             track.solo = (bool) obj->getProperty("solo");
             track.armed = (bool) obj->getProperty("armed");

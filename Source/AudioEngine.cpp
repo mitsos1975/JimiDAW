@@ -207,6 +207,9 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
     if (trackAudio.getNumChannels() < trackCount || trackAudio.getNumSamples() < numSamples)
         trackAudio.setSize(juce::jmax(1, trackCount), numSamples, false, false, true);
     trackAudio.clear();
+    if (sendBus.getNumChannels() < 1 || sendBus.getNumSamples() < numSamples)
+        sendBus.setSize(1, juce::jmax(numSamples, 1), false, false, true);
+    sendBus.clear();
 
     const double rate = sampleRate > 1000.0 ? sampleRate : 44100.0;
     const double tempo = bpm.load();
@@ -373,17 +376,48 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
                 const float value = trackAudio.getSample(trackIndex, sample);
                 const float gain = track.volumeAt(blockStart + sample * beatsPerSample);
                 trackPeak = juce::jmax(trackPeak, std::abs(value * gain));
+                const float gained = value * gain;
+                if (track.send > 0.001f)
+                    sendBus.addSample(0, sample, gained * track.send);
                 if (numOutputs > 0)
-                    outputs[0][sample] += value * leftPan * gain;
+                    outputs[0][sample] += gained * leftPan;
                 if (numOutputs > 1)
-                    outputs[1][sample] += value * rightPan * gain;
+                    outputs[1][sample] += gained * rightPan;
                 else if (numOutputs == 1)
-                    outputs[0][sample] += value * 0.5f * (leftPan + rightPan) * gain;
+                    outputs[0][sample] += gained * 0.5f * (leftPan + rightPan);
             }
             rememberPeak(trackIndex, trackPeak);
         }
         if (live)
             beat.store(cursor);
+    }
+
+    const double rate = sampleRate > 1000.0 ? sampleRate : 44100.0;
+    const int leftTime = juce::jmax(8, (int) (0.29 * rate));
+    const int rightTime = juce::jmax(8, (int) (0.41 * rate));
+    if ((int) delayL.size() != leftTime)
+    {
+        delayL.assign((size_t) leftTime, 0.0f);
+        delayPosL = 0;
+    }
+    if ((int) delayR.size() != rightTime)
+    {
+        delayR.assign((size_t) rightTime, 0.0f);
+        delayPosR = 0;
+    }
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        const float in = sendBus.getSample(0, sample);
+        const float wetL = delayL[(size_t) delayPosL];
+        const float wetR = delayR[(size_t) delayPosR];
+        delayL[(size_t) delayPosL] = juce::jlimit(-1.5f, 1.5f, in * 0.8f + wetL * 0.38f);
+        delayR[(size_t) delayPosR] = juce::jlimit(-1.5f, 1.5f, in * 0.8f + wetR * 0.34f);
+        delayPosL = (delayPosL + 1) % leftTime;
+        delayPosR = (delayPosR + 1) % rightTime;
+        if (numOutputs > 0 && outputs[0] != nullptr)
+            outputs[0][sample] += wetL * 0.62f;
+        if (numOutputs > 1 && outputs[1] != nullptr)
+            outputs[1][sample] += wetR * 0.62f;
     }
 
     float busPeak = 0.0f;

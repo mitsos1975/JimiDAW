@@ -30,6 +30,9 @@ private:
     void showAudioSettings();
     void refreshEditors();
     void splitSelectedClip();
+    void duplicateSelectedClip();
+    void quantizeSelectedNotes();
+    void addMarker();
     void chooseFile(const juce::String& title, const juce::String& filter, int flags,
                     const std::function<void(const juce::File&)>& use);
 
@@ -52,6 +55,9 @@ private:
     juce::TextButton clickButton { "Click" };
     juce::TextButton autoButton { "Auto" };
     juce::TextButton splitButton { "Split" };
+    juce::TextButton copyButton { "Copy" };
+    juce::TextButton quantButton { "Quant" };
+    juce::TextButton markButton { "Mark" };
     std::unique_ptr<AudioSettingsWindow> audioSettings;
     std::unique_ptr<PluginWindow> pluginWindow;
     std::unique_ptr<juce::FileChooser> chooser;

@@ -193,6 +193,15 @@ void ArrangementView::paint(juce::Graphics& g)
         g.drawLine(b, 0.0f, b, (float) header, 2.0f);
     }
 
+    for (const auto& marker : project->markers)
+    {
+        const float x = (float) ((marker.beat - originBeat) * pixelsPerBeat);
+        g.setColour(juce::Colour(0xffe0b15a));
+        g.fillRect(x, 0.0f, 2.0f, (float) header);
+        g.setFont(juce::FontOptions(11.0f));
+        g.drawText(marker.name, (int) x + 4, 2, 48, header - 4, juce::Justification::centredLeft, true);
+    }
+
     const float playhead = (float) ((beat - originBeat) * pixelsPerBeat);
     g.setColour(juce::Colour(0xfff2f2f2));
     juce::Path flag;
@@ -206,6 +215,20 @@ void ArrangementView::mouseDown(const juce::MouseEvent& event)
     grabKeyboardFocus();
     const int track = trackAt(event.y);
     dragPoint = -1;
+
+    if (project != nullptr && event.y < header)
+    {
+        for (const auto& marker : project->markers)
+        {
+            const int x = (int) ((marker.beat - originBeat) * pixelsPerBeat);
+            if (std::abs(x - event.x) <= 8)
+            {
+                if (onSeek)
+                    onSeek(marker.beat);
+                return;
+            }
+        }
+    }
 
     if (project != nullptr && project->automationMode && track >= 0)
     {

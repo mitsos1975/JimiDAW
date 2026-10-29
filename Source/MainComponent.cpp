@@ -212,8 +212,11 @@ MainComponent::MainComponent()
         arrangement.repaint();
     };
     splitButton.onClick = [this] { splitSelectedClip(); };
+    copyButton.onClick = [this] { duplicateSelectedClip(); };
+    quantButton.onClick = [this] { quantizeSelectedNotes(); };
+    markButton.onClick = [this] { addMarker(); };
 
-    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton })
+    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton, &copyButton, &quantButton, &markButton })
         addAndMakeVisible(button);
     addAndMakeVisible(transport);
     addAndMakeVisible(trackList);
@@ -277,6 +280,41 @@ void MainComponent::splitSelectedClip()
     right.sourceOffset = clip.sourceOffset + leftLength * 60.0 / juce::jmax(40.0, project.bpm);
     clip.lengthBeats = leftLength;
     clips.push_back(std::move(right));
+    arrangement.repaint();
+}
+
+
+void MainComponent::duplicateSelectedClip()
+{
+    if (project.selectedTrack < 0 || project.selectedTrack >= (int) project.tracks.size())
+        return;
+    auto& clips = project.tracks[(size_t) project.selectedTrack].clips;
+    if (project.selectedClip < 0 || project.selectedClip >= (int) clips.size())
+        return;
+    juce::ScopedLock sl(engine.getLock());
+    Clip copy = clips[(size_t) project.selectedClip];
+    copy.startBeat += copy.lengthBeats;
+    copy.name = copy.name + " copy";
+    clips.push_back(std::move(copy));
+    arrangement.repaint();
+}
+
+void MainComponent::quantizeSelectedNotes()
+{
+    if (project.selectedTrack < 0 || project.selectedTrack >= (int) project.tracks.size())
+        return;
+    juce::ScopedLock sl(engine.getLock());
+    for (auto& note : project.tracks[(size_t) project.selectedTrack].notes)
+        note.startBeat = std::round(note.startBeat * 4.0) / 4.0;
+    refreshEditors();
+}
+
+void MainComponent::addMarker()
+{
+    Marker marker;
+    marker.beat = std::round(engine.getBeat() * 4.0) / 4.0;
+    marker.name = "M" + juce::String((int) project.markers.size() + 1);
+    project.markers.push_back(marker);
     arrangement.repaint();
 }
 
@@ -382,9 +420,9 @@ void MainComponent::resized()
 {
     auto area = getLocalBounds();
     auto tools = area.removeFromTop(36).reduced(6, 4);
-    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton })
+    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton, &copyButton, &quantButton, &markButton })
     {
-        button->setBounds(tools.removeFromLeft(68));
+        button->setBounds(tools.removeFromLeft(58));
         tools.removeFromLeft(4);
     }
     transport.setBounds(area.removeFromTop(48));
