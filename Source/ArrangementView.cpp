@@ -69,8 +69,8 @@ void ArrangementView::drawWaveform(juce::Graphics& g, const Clip& clip, juce::Re
 
 void ArrangementView::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff121212));
-    g.setColour(juce::Colour(0xff1c1c1c));
+    g.fillAll(juce::Colour(0xff1b1d20));
+    g.setColour(juce::Colour(0xff2a2d31));
     g.fillRect(0, 0, getWidth(), header);
     g.setColour(juce::Colour(0xff0a0a0a));
     g.drawLine(0.0f, (float) header - 1.0f, (float) getWidth(), (float) header - 1.0f);
@@ -80,11 +80,12 @@ void ArrangementView::paint(juce::Graphics& g)
     {
         const int x = (int) ((bar - originBeat) * pixelsPerBeat);
         const bool downbeat = std::fmod(bar, 4.0) < 0.001;
-        g.setColour(downbeat ? juce::Colour(0xff303030) : juce::Colour(0xff222222));
+        const bool marker = std::fmod(bar, 8.0) < 0.001;
+        g.setColour(downbeat ? juce::Colour(0xff3a3e44) : juce::Colour(0xff26292d));
         g.drawVerticalLine(x, (float) header, (float) getHeight());
-        if (downbeat)
+        if (marker)
         {
-            g.setColour(juce::Colour(0xffc8c8c8));
+            g.setColour(juce::Colour(0xffd0d0d0));
             g.drawText(juce::String((int) (bar / 4.0) + 1), x + 4, 2, 36, header - 4, juce::Justification::centredLeft);
         }
     }

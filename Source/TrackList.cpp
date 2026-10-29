@@ -11,7 +11,7 @@ void TrackList::paint(juce::Graphics& g)
     g.fillAll(juce::Colour(0xff181818));
     g.setColour(juce::Colour(0xff8a8a8a));
     g.setFont(juce::FontOptions(11.0f));
-    g.drawText("TRACKS", 10, 0, getWidth() - 16, header, juce::Justification::centredLeft);
+    g.drawText("Band Tracks", 10, 0, getWidth() - 16, header, juce::Justification::centredLeft);
     g.setColour(juce::Colour(0xff0c0c0c));
     g.drawLine(0.0f, (float) header - 1.0f, (float) getWidth(), (float) header - 1.0f);
     if (project == nullptr)
@@ -23,9 +23,9 @@ void TrackList::paint(juce::Graphics& g)
         const bool selected = project->selectedTrack == (int) i;
         g.setColour(selected ? juce::Colour(0xff2a3138) : juce::Colour(i % 2 == 0 ? 0xff1c1c1c : 0xff161616));
         g.fillRect(row);
-        const auto tone = project->tracks[i].colour.withSaturation(0.45f).withBrightness(0.62f);
+        const auto tone = project->tracks[i].colour;
         g.setColour(tone);
-        g.fillRect(row.removeFromLeft(3));
+        g.fillRect(row.removeFromLeft(8));
         if (selected)
         {
             g.setColour(juce::Colour(0xffd0d0d0).withAlpha(0.35f));

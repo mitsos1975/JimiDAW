@@ -8,13 +8,15 @@
 #include "MixerView.h"
 #include "PianoRoll.h"
 #include "Inspector.h"
+#include "StudioChrome.h"
 #include "Project.h"
 
 class AudioSettingsWindow;
 class PluginWindow;
 
 class MainComponent : public juce::Component,
-                      private juce::Timer
+                      private juce::Timer,
+                      private juce::MenuBarModel
 {
 public:
     MainComponent();
@@ -25,6 +27,9 @@ public:
 
 private:
     void timerCallback() override;
+    juce::StringArray getMenuBarNames() override;
+    juce::PopupMenu getMenuForIndex(int, const juce::String&) override;
+    void menuItemSelected(int, int) override;
     void toggleRecord();
     void commitRecording();
     void showAudioSettings();
@@ -58,9 +63,16 @@ private:
     juce::TextButton copyButton { "Copy" };
     juce::TextButton quantButton { "Quant" };
     juce::TextButton markButton { "Mark" };
+    juce::TextButton mixButton { "Mix" };
+    juce::TextButton eqButton { "EQ" };
+    juce::MenuBarComponent menuBar { this };
+    MediaRack mediaRack;
+    ChannelEq channelEq;
     std::unique_ptr<AudioSettingsWindow> audioSettings;
     std::unique_ptr<PluginWindow> pluginWindow;
     std::unique_ptr<juce::FileChooser> chooser;
     bool showPiano = false;
+    bool showMixer = false;
+    bool showChannel = false;
     bool sawRecording = false;
 };

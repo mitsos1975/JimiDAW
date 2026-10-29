@@ -50,6 +50,8 @@ target_sources(JimiDAW PRIVATE
     Source/PianoRoll.cpp
     Source/Inspector.h
     Source/Inspector.cpp
+    Source/StudioChrome.h
+    Source/StudioChrome.cpp
 )
 
 target_compile_definitions(JimiDAW PRIVATE

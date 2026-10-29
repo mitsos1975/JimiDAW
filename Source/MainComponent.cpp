@@ -215,8 +215,26 @@ MainComponent::MainComponent()
     copyButton.onClick = [this] { duplicateSelectedClip(); };
     quantButton.onClick = [this] { quantizeSelectedNotes(); };
     markButton.onClick = [this] { addMarker(); };
+    mixButton.onClick = [this]
+    {
+        showMixer = !showMixer;
+        if (showMixer)
+        {
+            showPiano = false;
+            showChannel = false;
+        }
+        resized();
+    };
+    eqButton.onClick = [this]
+    {
+        showChannel = !showChannel;
+        if (showChannel)
+            showMixer = false;
+        channelEq.refresh();
+        resized();
+    };
 
-    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton, &copyButton, &quantButton, &markButton })
+    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton, &copyButton, &quantButton, &markButton, &mixButton, &eqButton })
         addAndMakeVisible(button);
     addAndMakeVisible(transport);
     addAndMakeVisible(trackList);
@@ -224,6 +242,25 @@ MainComponent::MainComponent()
     addAndMakeVisible(mixer);
     addAndMakeVisible(piano);
     addAndMakeVisible(inspector);
+    addAndMakeVisible(menuBar);
+    addAndMakeVisible(mediaRack);
+    addAndMakeVisible(channelEq);
+    channelEq.setVisible(false);
+    channelEq.setProject(&project);
+    channelEq.lock = &engine.getLock();
+    channelEq.onChanged = [this] { refreshEditors(); };
+    channelEq.onLoadPlugin = [this] { if (inspector.onLoadPlugin) inspector.onLoadPlugin(); };
+    mediaRack.onTile = [this](int tile)
+    {
+        if ((tile == 0 || tile == 1) && inspector.onLoadPlugin)
+            inspector.onLoadPlugin();
+        else if (tile == 2 || tile == 5)
+            importButton.triggerClick();
+        else if (tile == 3)
+            pianoButton.triggerClick();
+        else if (tile == 6)
+            eqButton.triggerClick();
+    };
     piano.setVisible(false);
     clickButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3d5a80));
 
@@ -255,6 +292,7 @@ void MainComponent::refreshEditors()
     trackList.repaint();
     piano.repaint();
     mixer.repaint();
+    channelEq.refresh();
 }
 
 
@@ -403,6 +441,82 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     return false;
 }
 
+juce::StringArray MainComponent::getMenuBarNames()
+{
+    return { "File", "Edit", "Project", "Audio", "MIDI", "Transport", "Window", "Help" };
+}
+
+juce::PopupMenu MainComponent::getMenuForIndex(int index, const juce::String&)
+{
+    juce::PopupMenu menu;
+    if (index == 0)
+    {
+        menu.addItem(1, "Save...");
+        menu.addItem(2, "Open...");
+        menu.addItem(3, "Import Audio...");
+        menu.addItem(4, "Export WAV...");
+        menu.addSeparator();
+        menu.addItem(5, "Quit");
+    }
+    else if (index == 1)
+    {
+        menu.addItem(10, "Split at Playhead");
+        menu.addItem(11, "Duplicate Clip");
+        menu.addItem(12, "Quantize");
+    }
+    else if (index == 2)
+        menu.addItem(20, "Add Track");
+    else if (index == 3)
+        menu.addItem(30, "Audio Connections...");
+    else if (index == 4)
+        menu.addItem(40, "Piano Roll");
+    else if (index == 5)
+    {
+        menu.addItem(50, "Play");
+        menu.addItem(51, "Stop");
+        menu.addItem(52, "Record");
+        menu.addItem(53, "Loop");
+        menu.addItem(54, "Metronome");
+        menu.addItem(55, "Add Marker");
+    }
+    else if (index == 6)
+    {
+        menu.addItem(60, "Project");
+        menu.addItem(61, "MixConsole");
+        menu.addItem(62, "Channel Settings");
+    }
+    else if (index == 7)
+        menu.addItem(70, "About JimiDAW");
+    return menu;
+}
+
+void MainComponent::menuItemSelected(int id, int)
+{
+    if (id == 1) saveButton.triggerClick();
+    if (id == 2) openButton.triggerClick();
+    if (id == 3) importButton.triggerClick();
+    if (id == 4) exportButton.triggerClick();
+    if (id == 5) juce::JUCEApplication::getInstance()->systemRequestedQuit();
+    if (id == 10) splitSelectedClip();
+    if (id == 11) duplicateSelectedClip();
+    if (id == 12) quantizeSelectedNotes();
+    if (id == 20) addTrackButton.triggerClick();
+    if (id == 30) showAudioSettings();
+    if (id == 40) pianoButton.triggerClick();
+    if (id == 50) transport.onPlay();
+    if (id == 51) transport.onStop();
+    if (id == 52) transport.onRecord();
+    if (id == 53) loopButton.triggerClick();
+    if (id == 54) clickButton.triggerClick();
+    if (id == 55) addMarker();
+    if (id == 60) { showMixer = false; showChannel = false; resized(); }
+    if (id == 61) mixButton.triggerClick();
+    if (id == 62) eqButton.triggerClick();
+    if (id == 70)
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "JimiDAW",
+            "JimiDAW is a Windows DAW with a Cubase-style project window, MixConsole and channel EQ. It is not Cubase.");
+}
+
 void MainComponent::timerCallback()
 {
     transport.setBeat(engine.getBeat());
@@ -413,32 +527,55 @@ void MainComponent::timerCallback()
 
 void MainComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff1a1c1e));
+    g.fillAll(juce::Colour(0xff1e2024));
+    g.setColour(juce::Colour(0xff16181b));
+    g.fillRect(0, 58, getWidth(), 22);
+    g.setColour(juce::Colour(0xffb7bdc4));
+    g.setFont(juce::FontOptions(12.0f));
+    juce::String object = "No Object Selected";
+    if (project.selectedTrack >= 0 && project.selectedTrack < (int) project.tracks.size())
+        object = project.tracks[(size_t) project.selectedTrack].name;
+    g.drawText("Record Format   44.1 kHz  -  24 bit      Tempo   " + juce::String(project.bpm, 2)
+                   + "      " + object,
+               12, 58, getWidth() - 24, 22, juce::Justification::centredLeft);
 }
 
 void MainComponent::resized()
 {
     auto area = getLocalBounds();
-    auto tools = area.removeFromTop(36).reduced(6, 4);
-    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton, &copyButton, &quantButton, &markButton })
+    menuBar.setBounds(area.removeFromTop(24));
+    auto tools = area.removeFromTop(34).reduced(4, 3);
+    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton, &copyButton, &quantButton, &markButton, &mixButton, &eqButton })
     {
-        button->setBounds(tools.removeFromLeft(58));
-        tools.removeFromLeft(4);
+        button->setBounds(tools.removeFromLeft(52));
+        tools.removeFromLeft(3);
     }
-    transport.setBounds(area.removeFromTop(48));
-    inspector.setBounds(area.removeFromRight(250));
-    if (showPiano)
+    area.removeFromTop(22);
+    transport.setBounds(area.removeFromBottom(46));
+
+    const bool projectView = !showMixer;
+    inspector.setVisible(projectView);
+    mediaRack.setVisible(projectView && !showChannel);
+    trackList.setVisible(projectView);
+    arrangement.setVisible(projectView && !showChannel);
+    channelEq.setVisible(projectView && showChannel);
+    mixer.setVisible(showMixer);
+    piano.setVisible(projectView && showPiano && !showChannel);
+
+    if (showMixer)
     {
-        mixer.setVisible(false);
-        piano.setVisible(true);
-        piano.setBounds(area.removeFromBottom(280));
+        mixer.setBounds(area);
+        return;
     }
+
+    inspector.setBounds(area.removeFromLeft(250));
+    if (!showChannel)
+        mediaRack.setBounds(area.removeFromRight(210));
+    if (showPiano && !showChannel)
+        piano.setBounds(area.removeFromBottom(240));
+    trackList.setBounds(area.removeFromLeft(230));
+    if (showChannel)
+        channelEq.setBounds(area);
     else
-    {
-        piano.setVisible(false);
-        mixer.setVisible(true);
-        mixer.setBounds(area.removeFromBottom(300));
-    }
-    trackList.setBounds(area.removeFromLeft(220));
-    arrangement.setBounds(area);
+        arrangement.setBounds(area);
 }

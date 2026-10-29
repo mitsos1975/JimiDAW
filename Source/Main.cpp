@@ -20,7 +20,7 @@ public:
     {
     public:
         explicit MainWindow(juce::String name)
-            : DocumentWindow(name, juce::Colour(0xff141414), DocumentWindow::allButtons)
+            : DocumentWindow("JimiDAW Project", juce::Colour(0xff1e1e1e), DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar(true);
             setContentOwned(new MainComponent(), true);

@@ -42,9 +42,11 @@ void TransportBar::setRecording(bool recording)
 void TransportBar::setBeat(double beat)
 {
     const int bar = (int) std::floor(beat / 4.0) + 1;
-    const int step = ((int) std::floor(beat)) % 4 + 1;
-    const int tick = ((int) std::floor(beat * 4.0)) % 4 + 1;
-    positionLabel.setText(juce::String(bar) + "." + juce::String(step) + "." + juce::String(tick),
+    const double local = beat - std::floor(beat / 4.0) * 4.0;
+    const int beatInBar = (int) std::floor(local) + 1;
+    const int sixteenth = (int) std::floor(std::fmod(local, 1.0) * 4.0) + 1;
+    const int tick = (int) std::floor(std::fmod(local, 0.25) / 0.25 * 120.0);
+    positionLabel.setText(juce::String(bar) + "." + juce::String(beatInBar) + "." + juce::String(sixteenth) + "." + juce::String(tick),
                           juce::dontSendNotification);
 }
 
@@ -76,7 +78,7 @@ void TransportBar::resized()
     area.removeFromLeft(8);
     audioButton.setBounds(area.removeFromLeft(64));
     area.removeFromLeft(16);
-    positionLabel.setBounds(area.removeFromLeft(118).reduced(0, 1));
+    positionLabel.setBounds(area.removeFromLeft(148).reduced(0, 1));
     area.removeFromLeft(12);
     tempoLabel.setBounds(area.removeFromLeft(36));
     tempoSlider.setBounds(area.removeFromLeft(210));

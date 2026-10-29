@@ -117,7 +117,10 @@ void MixerView::paintMeter(juce::Graphics& g, juce::Rectangle<int> area, float l
 
 void MixerView::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff161616));
+    g.fillAll(juce::Colour(0xff23262b));
+    g.setColour(juce::Colour(0xff9aa3ad));
+    g.setFont(juce::FontOptions(11.0f));
+    g.drawText("ROUTING      INSERTS      EQ      STRIP      SENDS", 8, 2, getWidth() - 16, 18, juce::Justification::centredLeft);
     if (project == nullptr)
         return;
 
@@ -126,7 +129,7 @@ void MixerView::paint(juce::Graphics& g)
     for (int i = 0; i < columns; ++i)
     {
         const bool master = i == (int) project->tracks.size();
-        auto column = juce::Rectangle<int>(i * columnWidth, 0, columnWidth, getHeight()).reduced(3, 4);
+        auto column = juce::Rectangle<int>(i * columnWidth, 22, columnWidth, getHeight() - 22).reduced(3, 4);
         g.setColour(juce::Colour(0xff101010));
         g.fillRect(column);
         g.setColour(juce::Colour(0xff2a2a2a));
@@ -137,8 +140,8 @@ void MixerView::paint(juce::Graphics& g)
         g.fillRect(column.getX(), column.getY(), column.getWidth(), 4);
 
         g.setColour(juce::Colour(0xffe4e4e4));
-        g.drawText(master ? "Master" : project->tracks[(size_t) i].name,
-                   column.getX(), column.getY() + 46, column.getWidth(), 16, juce::Justification::centred, true);
+        g.drawText(master ? "Stereo Out" : project->tracks[(size_t) i].name,
+                   column.getX(), column.getY() + 40, column.getWidth(), 16, juce::Justification::centred, true);
 
         if (!master)
         {
@@ -163,9 +166,9 @@ void MixerView::resized()
 {
     for (int i = 0; i < faders.size(); ++i)
     {
-        sends[i]->setBounds(i * columnWidth + 8, 6, 34, 34);
-        pans[i]->setBounds(i * columnWidth + 44, 6, 34, 34);
-        faders[i]->setBounds(i * columnWidth + 30, 66, 40, getHeight() - 96);
+        sends[i]->setBounds(i * columnWidth + 8, 28, 34, 34);
+        pans[i]->setBounds(i * columnWidth + 44, 28, 34, 34);
+        faders[i]->setBounds(i * columnWidth + 30, 108, 40, getHeight() - 138);
     }
 }
 
