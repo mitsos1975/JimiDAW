@@ -392,7 +392,6 @@ void AudioEngine::renderUnlocked(const float* input, float* const* outputs, int 
             beat.store(cursor);
     }
 
-    const double rate = sampleRate > 1000.0 ? sampleRate : 44100.0;
     const int leftTime = juce::jmax(8, (int) (0.29 * rate));
     const int rightTime = juce::jmax(8, (int) (0.41 * rate));
     if ((int) delayL.size() != leftTime)
