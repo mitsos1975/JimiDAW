@@ -235,7 +235,10 @@ MainComponent::MainComponent()
     };
 
     for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton, &copyButton, &quantButton, &markButton, &mixButton, &eqButton })
+    {
         addAndMakeVisible(button);
+        button->setVisible(false);
+    }
     addAndMakeVisible(transport);
     addAndMakeVisible(trackList);
     addAndMakeVisible(arrangement);
@@ -243,6 +246,7 @@ MainComponent::MainComponent()
     addAndMakeVisible(piano);
     addAndMakeVisible(inspector);
     addAndMakeVisible(menuBar);
+    addAndMakeVisible(toolStrip);
     addAndMakeVisible(mediaRack);
     addAndMakeVisible(channelEq);
     channelEq.setVisible(false);
@@ -259,6 +263,23 @@ MainComponent::MainComponent()
         else if (tile == 3)
             pianoButton.triggerClick();
         else if (tile == 6)
+            eqButton.triggerClick();
+    };
+    toolStrip.onCommand = [this](int id)
+    {
+        if (id < 3)
+            project.tool = id;
+        else if (id == 3)
+            splitSelectedClip();
+        else if (id == 4)
+            quantizeSelectedNotes();
+        else if (id == 5)
+            arrangement.nudgeZoom(1.25f);
+        else if (id == 6)
+            arrangement.nudgeZoom(0.8f);
+        else if (id == 7)
+            mixButton.triggerClick();
+        else if (id == 8)
             eqButton.triggerClick();
     };
     piano.setVisible(false);
@@ -527,31 +548,29 @@ void MainComponent::timerCallback()
 
 void MainComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff1e2024));
-    g.setColour(juce::Colour(0xff16181b));
-    g.fillRect(0, 58, getWidth(), 22);
-    g.setColour(juce::Colour(0xffb7bdc4));
-    g.setFont(juce::FontOptions(12.0f));
+    g.fillAll(juce::Colour(0xff1b1d21));
+    g.setColour(juce::Colour(0xff141618));
+    g.fillRect(0, 54, getWidth(), 34);
+    g.setColour(juce::Colour(0xff9aa0a6));
+    g.setFont(juce::FontOptions(11.0f));
+    g.drawText("Record Format   44.1 kHz - 24 bit      Project Pan Law  -3 dB",
+               0, 54, getWidth(), 16, juce::Justification::centred);
     juce::String object = "No Object Selected";
-    if (project.selectedTrack >= 0 && project.selectedTrack < (int) project.tracks.size())
+    if (project.selectedClip >= 0)
+        object = "Part";
+    else if (project.selectedTrack >= 0 && project.selectedTrack < (int) project.tracks.size() && project.tool != 0)
         object = project.tracks[(size_t) project.selectedTrack].name;
-    g.drawText("Record Format   44.1 kHz  -  24 bit      Tempo   " + juce::String(project.bpm, 2)
-                   + "      " + object,
-               12, 58, getWidth() - 24, 22, juce::Justification::centredLeft);
+    g.setColour(juce::Colour(0xffc8c8c8));
+    g.drawText(object, 0, 70, getWidth(), 16, juce::Justification::centred);
 }
 
 void MainComponent::resized()
 {
     auto area = getLocalBounds();
-    menuBar.setBounds(area.removeFromTop(24));
-    auto tools = area.removeFromTop(34).reduced(4, 3);
-    for (auto* button : { &saveButton, &openButton, &importButton, &exportButton, &addTrackButton, &pianoButton, &loopButton, &clickButton, &autoButton, &splitButton, &copyButton, &quantButton, &markButton, &mixButton, &eqButton })
-    {
-        button->setBounds(tools.removeFromLeft(52));
-        tools.removeFromLeft(3);
-    }
-    area.removeFromTop(22);
-    transport.setBounds(area.removeFromBottom(46));
+    menuBar.setBounds(area.removeFromTop(22));
+    toolStrip.setBounds(area.removeFromTop(32));
+    area.removeFromTop(34);
+    transport.setBounds(area.removeFromBottom(40));
 
     const bool projectView = !showMixer;
     inspector.setVisible(projectView);
@@ -568,12 +587,12 @@ void MainComponent::resized()
         return;
     }
 
-    inspector.setBounds(area.removeFromLeft(250));
+    inspector.setBounds(area.removeFromLeft(236));
     if (!showChannel)
-        mediaRack.setBounds(area.removeFromRight(210));
+        mediaRack.setBounds(area.removeFromRight(228));
     if (showPiano && !showChannel)
         piano.setBounds(area.removeFromBottom(240));
-    trackList.setBounds(area.removeFromLeft(230));
+    trackList.setBounds(area.removeFromLeft(248));
     if (showChannel)
         channelEq.setBounds(area);
     else

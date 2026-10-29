@@ -16,8 +16,9 @@ public:
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseUp(const juce::MouseEvent&) override;
+    void nudgeZoom(float factor);
 
-    static constexpr int header = 28;
+    static constexpr int header = 24;
 
 private:
     void drawWaveform(juce::Graphics&, const Clip&, juce::Rectangle<float>);
@@ -28,7 +29,7 @@ private:
     Project* project = nullptr;
     double beat = 0.0;
     double originBeat = 0.0;
-    double pixelsPerBeat = 32.0;
+    double pixelsPerBeat = 18.0;
     int dragTrack = -1;
     int dragClip = -1;
     int dragPoint = -1;

@@ -10,6 +10,15 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
 };
 
+class ToolStrip : public juce::Component
+{
+public:
+    int tool = 0;
+    std::function<void(int)> onCommand;
+    void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+};
+
 class ChannelEq : public juce::Component
 {
 public:

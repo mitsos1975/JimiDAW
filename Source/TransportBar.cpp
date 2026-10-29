@@ -69,19 +69,18 @@ void TransportBar::paint(juce::Graphics& g)
 
 void TransportBar::resized()
 {
-    auto area = getLocalBounds().reduced(10, 8);
-    playButton.setBounds(area.removeFromLeft(42));
-    area.removeFromLeft(4);
-    stopButton.setBounds(area.removeFromLeft(42));
-    area.removeFromLeft(4);
-    recordButton.setBounds(area.removeFromLeft(42));
-    area.removeFromLeft(8);
-    audioButton.setBounds(area.removeFromLeft(64));
-    area.removeFromLeft(16);
-    positionLabel.setBounds(area.removeFromLeft(148).reduced(0, 1));
-    area.removeFromLeft(12);
-    tempoLabel.setBounds(area.removeFromLeft(36));
-    tempoSlider.setBounds(area.removeFromLeft(210));
+    auto cluster = getLocalBounds().withSizeKeepingCentre(560, getHeight()).reduced(0, 6);
+    stopButton.setBounds(cluster.removeFromLeft(34));
+    cluster.removeFromLeft(4);
+    playButton.setBounds(cluster.removeFromLeft(34));
+    cluster.removeFromLeft(4);
+    recordButton.setBounds(cluster.removeFromLeft(34));
+    cluster.removeFromLeft(12);
+    positionLabel.setBounds(cluster.removeFromLeft(150).reduced(0, 1));
+    cluster.removeFromLeft(8);
+    tempoLabel.setBounds(cluster.removeFromLeft(36));
+    tempoSlider.setBounds(cluster.removeFromLeft(180));
+    audioButton.setBounds(getLocalBounds().removeFromRight(72).reduced(8, 8));
 }
 
 void TransportBar::buttonClicked(juce::Button* button)

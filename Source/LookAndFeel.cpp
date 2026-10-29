@@ -114,11 +114,12 @@ void DawLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int width
         g.setColour(juce::Colour(0xff6ea8ff).withAlpha(0.85f));
         g.fillRect(slot.getX(), sliderPos, slot.getWidth(), slot.getBottom() - sliderPos);
 
-        auto cap = juce::Rectangle<float>(bounds.getCentreX() - 11.0f, sliderPos - 8.0f, 22.0f, 16.0f);
-        g.setColour(juce::Colour(0xff1a1a1a));
+        auto capColour = slider.findColour(juce::Slider::thumbColourId);
+        auto cap = juce::Rectangle<float>(bounds.getCentreX() - 10.0f, sliderPos - 7.0f, 20.0f, 14.0f);
+        g.setColour(juce::Colour(0xff111111));
         g.fillRoundedRectangle(cap.translated(0.0f, 1.0f), 2.0f);
-        juce::ColourGradient metal(juce::Colour(0xfff4f4f4), cap.getX(), cap.getY(),
-                                   juce::Colour(0xff8e8e8e), cap.getX(), cap.getBottom(), false);
+        juce::ColourGradient metal(capColour.brighter(0.55f), cap.getX(), cap.getY(),
+                                   capColour.darker(0.35f), cap.getX(), cap.getBottom(), false);
         g.setGradientFill(metal);
         g.fillRoundedRectangle(cap, 2.0f);
         g.setColour(juce::Colour(0xff4a4a4a));

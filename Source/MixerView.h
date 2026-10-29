@@ -16,7 +16,9 @@ public:
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
 
-    static constexpr int columnWidth = 104;
+    static constexpr int columnWidth = 72;
+    static constexpr int gutter = 176;
+    static constexpr int zone = 108;
 
 private:
     void rebuild();

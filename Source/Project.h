@@ -84,6 +84,7 @@ struct Project
     bool loopEnabled = false;
     bool metronome = true;
     bool automationMode = false;
+    int tool = 0;
     double loopStart = 0.0;
     double loopEnd = 8.0;
     std::vector<Track> tracks;
@@ -105,26 +106,29 @@ struct Project
     static Project demo()
     {
         Project project;
-        for (int i = 0; i < 8; ++i)
+        const char* names[] = {
+            "Kick IN", "Kick OUT", "Snare Top", "Snare Bottom", "Tom 1", "Tom 2",
+            "Floor 1", "Floor 2", "OH HH", "OH RIDE", "HIHAT", "ROOM",
+            "Bass", "EGT 1", "Keys 1", "Keys 2"
+        };
+        const juce::uint32 colours[] = {
+            0xff3ec6ff, 0xffff4fa3, 0xffff5aa5, 0xffff4d3a, 0xffff7a2f, 0xffff8a3a,
+            0xffff3b3b, 0xffffc83a, 0xffd6e23a, 0xff7dff4a, 0xff3dff7a, 0xff3dffa6,
+            0xffb6ff3a, 0xff3dfff0, 0xff4d8dff, 0xff7a6dff
+        };
+        for (int i = 0; i < 16; ++i)
         {
             auto track = makeTrack(i);
+            track.name = names[i];
+            track.colour = juce::Colour(colours[i]);
             track.armed = i == 0;
-            track.clips.push_back({ 0.0, 8.0, "Clip 1" });
-            if (i % 2 == 0)
-                track.clips.push_back({ 12.0, 4.0, "Clip 2" });
-            if (i == 0)
-            {
-                track.volumeAutomation.push_back({ 0.0, 0.25f });
-                track.volumeAutomation.push_back({ 4.0, 0.95f });
-                track.volumeAutomation.push_back({ 8.0, 0.35f });
-            }
             if (i == 1)
             {
-                track.send = 0.55f;
+                track.send = 0.35f;
                 track.notes.push_back({ 0.0, 1.0, 60, 0.8f });
-                track.notes.push_back({ 1.0, 1.0, 64, 0.8f });
-                track.notes.push_back({ 2.0, 1.0, 67, 0.8f });
-                track.notes.push_back({ 3.0, 1.0, 72, 0.8f });
+                track.notes.push_back({ 1.0, 1.0, 64, 0.7f });
+                track.notes.push_back({ 2.0, 1.0, 67, 0.75f });
+                track.notes.push_back({ 3.0, 2.0, 72, 0.8f });
             }
             project.tracks.push_back(std::move(track));
         }

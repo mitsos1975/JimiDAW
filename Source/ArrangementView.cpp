@@ -2,6 +2,12 @@
 #include <algorithm>
 #include "TrackList.h"
 
+void ArrangementView::nudgeZoom(float factor)
+{
+    pixelsPerBeat = juce::jlimit(8.0, 160.0, pixelsPerBeat * factor);
+    repaint();
+}
+
 void ArrangementView::setProject(Project* newProject)
 {
     project = newProject;
@@ -106,16 +112,16 @@ void ArrangementView::paint(juce::Graphics& g)
         {
             const auto& clip = project->tracks[i].clips[(size_t) c];
             auto box = juce::Rectangle<float>((float) ((clip.startBeat - originBeat) * pixelsPerBeat),
-                                              (float) y + 6.0f,
+                                              (float) y + 3.0f,
                                               (float) (clip.lengthBeats * pixelsPerBeat),
-                                              (float) TrackList::rowHeight - 12.0f);
+                                              (float) TrackList::rowHeight - 6.0f);
             if (box.getRight() < 0 || box.getX() > getWidth())
                 continue;
 
             g.setColour(tone.darker(0.55f));
             g.fillRect(box);
             g.setColour(tone);
-            g.fillRect(box.removeFromTop(14.0f));
+            g.fillRect(box.removeFromTop(11.0f));
             auto body = box;
             g.setColour(juce::Colour(0xffd8e2ea).withAlpha(0.85f));
             drawWaveform(g, clip, body.reduced(1.0f, 2.0f));
@@ -123,15 +129,15 @@ void ArrangementView::paint(juce::Graphics& g)
             const bool selected = project->selectedTrack == (int) i && project->selectedClip == c;
             g.setColour(selected ? juce::Colour(0xfff2f2f2) : juce::Colour(0xff000000).withAlpha(0.55f));
             g.drawRect(juce::Rectangle<float>((float) ((clip.startBeat - originBeat) * pixelsPerBeat),
-                                              (float) y + 6.0f,
+                                              (float) y + 3.0f,
                                               (float) (clip.lengthBeats * pixelsPerBeat),
-                                              (float) TrackList::rowHeight - 12.0f),
+                                              (float) TrackList::rowHeight - 6.0f),
                        selected ? 1.5f : 1.0f);
             g.setColour(juce::Colour(0xff111111));
             g.setFont(juce::FontOptions(11.0f));
             g.drawText(clip.name,
                        juce::Rectangle<float>((float) ((clip.startBeat - originBeat) * pixelsPerBeat) + 6.0f,
-                                              (float) y + 6.0f, box.getWidth(), 14.0f),
+                                              (float) y + 3.0f, box.getWidth(), 11.0f),
                        juce::Justification::centredLeft, true);
         }
 
@@ -291,6 +297,37 @@ void ArrangementView::mouseDown(const juce::MouseEvent& event)
     const int clip = clipAt(track, event.x, edge);
     if (project != nullptr && track >= 0)
         project->selectedTrack = track;
+
+    if (project != nullptr && project->tool == 2 && clip >= 0)
+    {
+        if (lock != nullptr)
+        {
+            juce::ScopedLock sl(*lock);
+            project->tracks[(size_t) track].clips.erase(project->tracks[(size_t) track].clips.begin() + clip);
+        }
+        project->selectedClip = -1;
+        if (onChanged) onChanged();
+        repaint();
+        return;
+    }
+
+    if (project != nullptr && project->tool == 1 && clip < 0 && track >= 0)
+    {
+        Clip created;
+        created.startBeat = std::round(juce::jmax(0.0, xToBeat(event.x)) * 4.0) / 4.0;
+        created.lengthBeats = 4.0;
+        created.name = "Part";
+        if (lock != nullptr)
+        {
+            juce::ScopedLock sl(*lock);
+            project->tracks[(size_t) track].clips.push_back(created);
+        }
+        else
+            project->tracks[(size_t) track].clips.push_back(created);
+        if (onChanged) onChanged();
+        repaint();
+        return;
+    }
 
     if (event.mods.isPopupMenu() && clip >= 0)
     {

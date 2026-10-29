@@ -8,51 +8,44 @@ void TrackList::setProject(Project* newProject)
 
 void TrackList::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff181818));
-    g.setColour(juce::Colour(0xff8a8a8a));
-    g.setFont(juce::FontOptions(11.0f));
-    g.drawText("Band Tracks", 10, 0, getWidth() - 16, header, juce::Justification::centredLeft);
-    g.setColour(juce::Colour(0xff0c0c0c));
-    g.drawLine(0.0f, (float) header - 1.0f, (float) getWidth(), (float) header - 1.0f);
+    g.fillAll(juce::Colour(0xff1c1e22));
+    g.setColour(juce::Colour(0xff2a2d31));
+    g.fillRect(0, 0, getWidth(), header);
+    g.setColour(juce::Colour(0xffd0d0d0));
+    g.setFont(juce::FontOptions(12.0f));
+    g.drawText("Band Tracks", 28, 0, getWidth() - 36, header, juce::Justification::centredLeft);
     if (project == nullptr)
         return;
 
     for (size_t i = 0; i < project->tracks.size(); ++i)
     {
-        auto row = juce::Rectangle<int>(0, header + (int) i * rowHeight, getWidth(), rowHeight);
+        const int y = header + (int) i * rowHeight;
         const bool selected = project->selectedTrack == (int) i;
-        g.setColour(selected ? juce::Colour(0xff2a3138) : juce::Colour(i % 2 == 0 ? 0xff1c1c1c : 0xff161616));
-        g.fillRect(row);
-        const auto tone = project->tracks[i].colour;
-        g.setColour(tone);
-        g.fillRect(row.removeFromLeft(8));
-        if (selected)
-        {
-            g.setColour(juce::Colour(0xffd0d0d0).withAlpha(0.35f));
-            g.drawRect(0, header + (int) i * rowHeight, getWidth(), rowHeight);
-        }
+        g.setColour(selected ? juce::Colour(0xff31404c) : juce::Colour(i % 2 ? 0xff23262a : 0xff1e2125));
+        g.fillRect(0, y, getWidth(), rowHeight - 1);
+        g.setColour(project->tracks[i].colour);
+        g.fillRect(0, y, 6, rowHeight - 1);
 
-        auto text = row.reduced(8, 6);
-        g.setColour(juce::Colour(0xffe6e6e6));
-        g.setFont(juce::FontOptions(13.0f));
-        g.drawText(project->tracks[i].name, text.removeFromTop(20), juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff9aa0a6));
+        g.setFont(juce::FontOptions(11.0f));
+        g.drawText(juce::String((int) i + 1), 10, y, 18, rowHeight, juce::Justification::centredLeft);
 
-        auto buttons = text.removeFromTop(18);
-        auto drawKey = [&](juce::Rectangle<int> box, const juce::String& letter, bool active, juce::Colour activeColour)
+        g.setColour(selected ? juce::Colours::white : juce::Colour(0xffd5d5d5));
+        g.setFont(juce::FontOptions(12.5f));
+        g.drawText(project->tracks[i].name, 30, y, getWidth() - 108, rowHeight, juce::Justification::centredLeft, true);
+
+        auto drawKey = [&](int x, const juce::String& letter, bool active, juce::Colour on)
         {
-            g.setColour(active ? activeColour : juce::Colour(0xff2a2a2a));
-            g.fillRect(box);
-            g.setColour(juce::Colour(0xff111111));
-            g.drawRect(box);
-            g.setColour(active ? juce::Colour(0xfff4f4f4) : juce::Colour(0xff8d8d8d));
-            g.setFont(juce::FontOptions(11.0f));
+            auto box = juce::Rectangle<int>(x, y + 6, 16, rowHeight - 12);
+            g.setColour(active ? on : juce::Colour(0xff2c3036));
+            g.fillRoundedRectangle(box.toFloat(), 2.0f);
+            g.setColour(active ? juce::Colours::white : juce::Colour(0xff9aa0a6));
+            g.setFont(juce::FontOptions(10.0f));
             g.drawText(letter, box, juce::Justification::centred);
         };
-        drawKey(buttons.removeFromLeft(20), "M", project->tracks[i].mute, juce::Colour(0xff8a3038));
-        buttons.removeFromLeft(4);
-        drawKey(buttons.removeFromLeft(20), "S", project->tracks[i].solo, juce::Colour(0xff8a7030));
-        buttons.removeFromLeft(4);
-        drawKey(buttons.removeFromLeft(20), "R", project->tracks[i].armed, juce::Colour(0xff8a3030));
+        drawKey(getWidth() - 62, "M", project->tracks[i].mute, juce::Colour(0xffc4a21a));
+        drawKey(getWidth() - 42, "S", project->tracks[i].solo, juce::Colour(0xff2f8fd0));
+        drawKey(getWidth() - 22, "R", project->tracks[i].armed, juce::Colour(0xffc44747));
     }
 }
 
@@ -64,24 +57,20 @@ void TrackList::mouseDown(const juce::MouseEvent& event)
     if (index < 0 || index >= (int) project->tracks.size())
         return;
 
-    const int localY = (event.y - header) - index * rowHeight;
-    auto apply = [this, index, localY, x = event.x]
+    auto apply = [this, index, x = event.x]
     {
         auto& track = project->tracks[(size_t) index];
         project->selectedTrack = index;
-        if (localY > 28)
+        if (x >= getWidth() - 62 && x < getWidth() - 44)
+            track.mute = !track.mute;
+        else if (x >= getWidth() - 42 && x < getWidth() - 24)
+            track.solo = !track.solo;
+        else if (x >= getWidth() - 22)
         {
-            if (x < 70)
-                track.mute = !track.mute;
-            else if (x < 94)
-                track.solo = !track.solo;
-            else if (x < 118)
-            {
-                for (auto& other : project->tracks)
-                    other.armed = false;
-                track.armed = true;
-                project->armedTrack = index;
-            }
+            for (auto& other : project->tracks)
+                other.armed = false;
+            track.armed = true;
+            project->armedTrack = index;
         }
     };
 

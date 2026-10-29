@@ -66,6 +66,7 @@ private:
     juce::TextButton mixButton { "Mix" };
     juce::TextButton eqButton { "EQ" };
     juce::MenuBarComponent menuBar { this };
+    ToolStrip toolStrip;
     MediaRack mediaRack;
     ChannelEq channelEq;
     std::unique_ptr<AudioSettingsWindow> audioSettings;

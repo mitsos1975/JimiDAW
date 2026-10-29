@@ -12,8 +12,8 @@ public:
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
 
-    static constexpr int rowHeight = 64;
-    static constexpr int header = 28;
+    static constexpr int rowHeight = 28;
+    static constexpr int header = 24;
 
 private:
     Project* project = nullptr;

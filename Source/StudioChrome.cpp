@@ -3,30 +3,34 @@
 
 void MediaRack::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff2a2c30));
-    g.setColour(juce::Colour(0xff1a1c1e));
-    g.fillRect(0, 0, getWidth(), 28);
-    g.setColour(juce::Colour(0xffd0d0d0));
+    g.fillAll(juce::Colour(0xff2a2d31));
+    auto tabs = getLocalBounds().removeFromTop(28);
+    g.setColour(juce::Colour(0xff1e2125));
+    g.fillRect(tabs);
+    g.setColour(juce::Colour(0xffd8d8d8));
     g.setFont(juce::FontOptions(12.0f));
-    g.drawText("VSTI", 8, 0, 48, 28, juce::Justification::centredLeft);
+    g.drawText("VSTI", 10, 0, 42, 28, juce::Justification::centredLeft);
     g.setColour(juce::Colour(0xff8e949c));
-    g.drawText("Media    CR    Meter", 56, 0, getWidth() - 64, 28, juce::Justification::centredLeft);
+    g.drawText("Media     CR     Meter", 52, 0, getWidth() - 60, 28, juce::Justification::centredLeft);
 
     const char* names[] = { "VST Instruments", "VST Effects", "Loops & Samples", "Presets",
                             "User Presets", "File Browser", "Favorites" };
-    auto area = getLocalBounds().withTrimmedTop(40).reduced(12, 4);
+    auto grid = getLocalBounds().withTrimmedTop(36).reduced(8, 4);
+    const int columns = 2;
+    const int cellW = grid.getWidth() / columns;
+    const int cellH = 92;
     for (int i = 0; i < 7; ++i)
     {
-        auto cell = area.removeFromTop(78).reduced(4, 4);
-        g.setColour(juce::Colour(0xff3a3d42));
-        g.fillRoundedRectangle(cell.toFloat(), 4.0f);
-        g.setColour(juce::Colour(0xff4a4e54));
-        g.drawRoundedRectangle(cell.toFloat(), 4.0f, 1.0f);
-        g.setColour(juce::Colour(0xffd7d7d7));
-        g.setFont(juce::FontOptions(13.0f));
-        g.drawText(names[i], cell.removeFromBottom(22), juce::Justification::centred);
-        g.setColour(juce::Colour(0xff9aa0a6));
-        g.drawText(i == 6 ? "*" : "FX", cell, juce::Justification::centred);
+        const int col = i % columns;
+        const int row = i / columns;
+        auto cell = juce::Rectangle<int>(grid.getX() + col * cellW, grid.getY() + row * cellH, cellW, cellH).reduced(6, 6);
+        g.setColour(juce::Colour(0xff3a3e44));
+        g.fillRoundedRectangle(cell.toFloat(), 3.0f);
+        g.setColour(juce::Colour(0xffcfcfcf));
+        auto icon = cell.removeFromTop(cell.getHeight() - 22).reduced(18, 8);
+        g.drawRoundedRectangle(icon.toFloat(), 3.0f, 1.4f);
+        g.setFont(juce::FontOptions(12.0f));
+        g.drawText(names[i], cell, juce::Justification::centred);
     }
 }
 
@@ -34,9 +38,72 @@ void MediaRack::mouseDown(const juce::MouseEvent& event)
 {
     if (event.y < 36 || !onTile)
         return;
-    const int index = (event.y - 40) / 78;
+    auto grid = getLocalBounds().withTrimmedTop(36).reduced(8, 4);
+    const int cellW = juce::jmax(1, grid.getWidth() / 2);
+    const int col = (event.x - grid.getX()) / cellW;
+    const int row = (event.y - grid.getY()) / 92;
+    if (col < 0 || col > 1 || row < 0)
+        return;
+    const int index = row * 2 + col;
     if (index >= 0 && index < 7)
         onTile(index);
+}
+
+void ToolStrip::paint(juce::Graphics& g)
+{
+    g.fillAll(juce::Colour(0xff2a2d31));
+    g.setColour(juce::Colour(0xff17191c));
+    g.fillRect(0, getHeight() - 1, getWidth(), 1);
+
+    auto button = [&](int x, int w, const juce::String& text, bool on)
+    {
+        auto box = juce::Rectangle<int>(x, 4, w, getHeight() - 8);
+        g.setColour(on ? juce::Colour(0xff3d5164) : juce::Colour(0xff34383d));
+        g.fillRoundedRectangle(box.toFloat(), 2.0f);
+        g.setColour(on ? juce::Colours::white : juce::Colour(0xffd0d0d0));
+        g.setFont(juce::FontOptions(11.0f));
+        g.drawText(text, box, juce::Justification::centred);
+    };
+
+    button(8, 28, "M", false);
+    button(38, 28, "S", false);
+    button(68, 28, "R", false);
+    button(108, 54, "Select", tool == 0);
+    button(164, 46, "Draw", tool == 1);
+    button(212, 50, "Erase", tool == 2);
+    button(274, 46, "Split", false);
+    button(322, 42, "Quant", false);
+    button(376, 28, "+", false);
+    button(406, 28, "-", false);
+    button(446, 52, "Grid", true);
+    button(500, 42, "Bar", false);
+    button(544, 42, "1/16", false);
+    button(getWidth() - 118, 52, "Mix", false);
+    button(getWidth() - 62, 52, "EQ", false);
+}
+
+void ToolStrip::mouseDown(const juce::MouseEvent& event)
+{
+    if (!onCommand)
+        return;
+    const int x = event.x;
+    int id = -1;
+    if (x >= 108 && x < 162) id = 0;
+    else if (x >= 164 && x < 210) id = 1;
+    else if (x >= 212 && x < 262) id = 2;
+    else if (x >= 274 && x < 320) id = 3;
+    else if (x >= 322 && x < 364) id = 4;
+    else if (x >= 376 && x < 404) id = 5;
+    else if (x >= 406 && x < 434) id = 6;
+    else if (x >= getWidth() - 118 && x < getWidth() - 64) id = 7;
+    else if (x >= getWidth() - 62) id = 8;
+    if (id >= 0)
+    {
+        if (id < 3)
+            tool = id;
+        onCommand(id);
+        repaint();
+    }
 }
 
 ChannelEq::ChannelEq()
